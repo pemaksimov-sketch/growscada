@@ -17,6 +17,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Containers are terminated by the tests and the hosted runner is disposable.
+    # Avoid a separate Docker Hub dependency for the optional cleanup container.
+    env:
+      TESTCONTAINERS_RYUK_DISABLED: 'true'
 
     steps:
       - name: Checkout repository

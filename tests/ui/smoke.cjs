@@ -69,6 +69,10 @@ async function api(resource, method = 'GET', body) {
     assert.equal(await background.evaluate(el => getComputedStyle(el).pointerEvents), 'none');
     assert.equal(await background.evaluate(el => getComputedStyle(el.nextElementSibling).pointerEvents), 'none');
     assert.match(await background.getAttribute('srcdoc'), /#1a1a2e/);
+    const initialBox = await page.locator(`#w-preview-${widget.id}`).boundingBox();
+    assert.ok(initialBox);
+    await page.mouse.click(initialBox.x + 30, initialBox.y + 30);
+    await page.locator(`#sim-${widget.id}-n`).fill('9007199254740993');
     const preview = page.frameLocator(`#w-preview-${widget.id}`).locator('#exact');
     await until(async () => await preview.textContent() === '9007199254740993');
     await page.screenshot({ path: path.join(output, 'project.png') });
