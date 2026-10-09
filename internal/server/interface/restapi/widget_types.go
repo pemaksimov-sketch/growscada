@@ -1,13 +1,10 @@
 package restapi
 
 import (
-	"errors"
 	"net/http"
 
-	"github.com/google/uuid"
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/application"
-	"github.com/kipitix/growscada/internal/server/domain/library"
 )
 
 // WidgetTypesHandlers handles HTTP requests related to widget types.
@@ -31,19 +28,13 @@ func (h WidgetTypesHandlers) GetWidgetTypes(w http.ResponseWriter, r *http.Reque
 
 // GetWidgetTypesByID handles GET /widget-types/{id}
 func (h WidgetTypesHandlers) GetWidgetTypesByID(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	inID, err := uuid.Parse(idStr)
-	if err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, NewBadRequest(err.Error(), r.URL.Path))
+	inID, ok := parsePathUUID(w, r, "id")
+	if !ok {
 		return
 	}
 
 	found, err := h.service.FindWidgetTypeByID(r.Context(), inID)
 	if err != nil {
-		if errors.Is(err, library.ErrWidgetTypeNotFound) {
-			sendJSONResponse(w, http.StatusNotFound, NewNotFound(err.Error(), idStr, r.URL.Path))
-			return
-		}
 		sendServiceError(w, r, err)
 		return
 	}
@@ -69,10 +60,8 @@ func (h WidgetTypesHandlers) PostWidgetTypes(w http.ResponseWriter, r *http.Requ
 
 // PutWidgetTypesByID handles PUT /widget-types/{id}
 func (h WidgetTypesHandlers) PutWidgetTypesByID(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	inID, err := uuid.Parse(idStr)
-	if err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, NewBadRequest(err.Error(), r.URL.Path))
+	inID, ok := parsePathUUID(w, r, "id")
+	if !ok {
 		return
 	}
 
@@ -83,14 +72,6 @@ func (h WidgetTypesHandlers) PutWidgetTypesByID(w http.ResponseWriter, r *http.R
 
 	updated, err := h.service.UpdateWidgetType(r.Context(), inID, request.Version, newUpdateWidgetTypeInput(request))
 	if err != nil {
-		if errors.Is(err, library.ErrWidgetTypeNotFound) {
-			sendJSONResponse(w, http.StatusNotFound, NewNotFound(err.Error(), idStr, r.URL.Path))
-			return
-		}
-		if errors.Is(err, library.ErrWidgetTypeConflict) {
-			sendJSONResponse(w, http.StatusConflict, NewConflict("widget type", err.Error(), r.URL.Path))
-			return
-		}
 		sendServiceError(w, r, err)
 		return
 	}
@@ -100,23 +81,13 @@ func (h WidgetTypesHandlers) PutWidgetTypesByID(w http.ResponseWriter, r *http.R
 
 // DeleteWidgetTypesByID handles DELETE /widget-types/{id}
 func (h WidgetTypesHandlers) DeleteWidgetTypesByID(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	inID, err := uuid.Parse(idStr)
-	if err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, NewBadRequest(err.Error(), r.URL.Path))
+	inID, ok := parsePathUUID(w, r, "id")
+	if !ok {
 		return
 	}
 
 	deleted, err := h.service.DeleteWidgetTypeByID(r.Context(), inID)
 	if err != nil {
-		if errors.Is(err, library.ErrWidgetTypeNotFound) {
-			sendJSONResponse(w, http.StatusNotFound, NewNotFound(err.Error(), idStr, r.URL.Path))
-			return
-		}
-		if errors.Is(err, library.ErrWidgetTypeInUse) || errors.Is(err, library.ErrWidgetTypeConflict) {
-			sendJSONResponse(w, http.StatusConflict, NewConflict("widget type", err.Error(), r.URL.Path))
-			return
-		}
 		sendServiceError(w, r, err)
 		return
 	}
