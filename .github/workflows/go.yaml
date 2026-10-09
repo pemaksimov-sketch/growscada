@@ -30,6 +30,11 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Cache PostgreSQL image from Docker's public ECR mirror
+        run: |
+          docker pull public.ecr.aws/docker/library/postgres:16-alpine
+          docker tag public.ecr.aws/docker/library/postgres:16-alpine postgres:16-alpine
+
       - name: Run tests
         run: make test
 
