@@ -91,6 +91,7 @@ func (h *eventHub) broadcast(e event.Event) {
 		Type:      e.Type().String(),
 		Timestamp: e.Timestamp().Time().Format(time.RFC3339),
 		ID:        eventSourceID(e),
+		SceneID:   eventSceneID(e),
 		Tag:       eventTag(e),
 	})
 	if err != nil {
@@ -111,6 +112,13 @@ func (h *eventHub) broadcast(e event.Event) {
 			close(c.messages)
 		}
 	}
+}
+
+func eventSceneID(e event.Event) string {
+	if ev, ok := e.(scene.WidgetEvent); ok {
+		return ev.SceneID().String()
+	}
+	return ""
 }
 
 // addClient registers a new SSE connection and returns its message channel.

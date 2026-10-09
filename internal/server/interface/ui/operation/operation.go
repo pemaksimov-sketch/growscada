@@ -7,6 +7,8 @@
 // Deploy exists it will follow the running Revision only.
 package operation
 
+import apiv0 "github.com/kipitix/growscada/contract/api/v0"
+
 import (
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 
@@ -38,6 +40,7 @@ type Operation struct {
 	// Coalesce reloads of each server-backed list.
 	widgetTypesReloader uiutil.Reloader
 	scenesReloader      uiutil.Reloader
+	sceneReloaders      map[string]*uiutil.Reloader
 	widgetsReloader     uiutil.Reloader
 	tagsReloader        uiutil.Reloader
 }
@@ -61,7 +64,7 @@ func (o *Operation) OnMount(ctx app.Context) {
 		if !ok {
 			return
 		}
-		if ev.Type == "tag_updated" {
+		if ev.Type == apiv0.EventTagUpdated {
 			if t, ok := decodeTagUpdate(ev.Tag); ok {
 				o.tags = applyTagUpdate(o.tags, t)
 				return
@@ -70,11 +73,14 @@ func (o *Operation) OnMount(ctx app.Context) {
 		if ev.Type == eventlog.EventResync {
 			o.tags = forgetVersions(o.tags)
 		}
-		o.reload(ctx, eventlog.ReloadTargetsFor(ev.Type))
+		o.reload(ctx, eventlog.ReloadTargetsForScene(ev, o.selectedSceneID))
 	})
 }
 
 func (o *Operation) reload(ctx app.Context, targets eventlog.ReloadTargets) {
+	if targets.SceneID != "" {
+		o.loadScene(ctx, targets.SceneID)
+	}
 	if targets.WidgetTypes {
 		o.loadWidgetTypes(ctx)
 	}

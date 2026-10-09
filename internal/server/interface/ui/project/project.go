@@ -40,6 +40,7 @@ type Project struct {
 	// Coalesce reloads of each server-backed list (see live_reload.go).
 	widgetTypesReloader uiutil.Reloader
 	scenesReloader      uiutil.Reloader
+	sceneReloaders      map[string]*uiutil.Reloader
 	widgetsReloader     uiutil.Reloader
 	tagsReloader        uiutil.Reloader
 	// widgetsReloadDeferred is set when a widget reload arrives mid-drag; it

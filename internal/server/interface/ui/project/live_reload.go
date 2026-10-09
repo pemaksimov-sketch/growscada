@@ -26,7 +26,10 @@ func (p *Project) handleServerEvents(ctx app.Context) {
 		if !ok {
 			return
 		}
-		targets := eventlog.ReloadTargetsFor(ev.Type)
+		targets := eventlog.ReloadTargetsForScene(ev, p.selectedSceneID)
+		if targets.SceneID != "" {
+			p.loadScene(ctx, targets.SceneID)
+		}
 		if targets.WidgetTypes {
 			p.loadWidgetTypes(ctx)
 		}
@@ -83,6 +86,48 @@ func (p *Project) loadScenes(ctx app.Context) {
 			}
 			if p.scenesReloader.Done() {
 				p.loadScenes(ctx)
+			}
+		})
+	})
+}
+
+// loadScene refreshes only the owner of a changed widget, including the
+// version when deleting the last widget leaves an empty widget list.
+func (p *Project) loadScene(ctx app.Context, sceneID string) {
+	ctx = p.compoCtx
+	if p.sceneReloaders == nil {
+		p.sceneReloaders = make(map[string]*uiutil.Reloader)
+	}
+	r := p.sceneReloaders[sceneID]
+	if r == nil {
+		r = &uiutil.Reloader{}
+		p.sceneReloaders[sceneID] = r
+	}
+	if !r.Start() {
+		return
+	}
+	ctx.Async(func() {
+		result, problem := uiutil.FetchJSON[sceneItem](p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID)
+		ctx.Dispatch(func(ctx app.Context) {
+			if problem != nil {
+				if problem.Status != 404 {
+					ctx.NewActionWithValue(toast.ActionAdd, *problem)
+				}
+			} else if old, exists := p.findScene(sceneID); exists && result.Version >= old.Version {
+				if sceneID == p.selectedSceneID {
+					p.mergeSceneEditingFields(old, result)
+				}
+				for i := range p.scenes {
+					if p.scenes[i].ID == sceneID {
+						p.scenes[i] = result
+						break
+					}
+				}
+			}
+			if r.Done() {
+				p.loadScene(ctx, sceneID)
+			} else {
+				delete(p.sceneReloaders, sceneID)
 			}
 		})
 	})

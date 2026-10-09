@@ -1,5 +1,7 @@
 package eventlog
 
+import apiv0 "github.com/kipitix/growscada/contract/api/v0"
+
 // category groups event types for the filter toggles shown in the panel.
 type category string
 
@@ -46,22 +48,23 @@ type eventTypeInfo struct {
 }
 
 var eventTypeInfoByType = map[string]eventTypeInfo{
-	"tag_created": {categoryTag, "Tag %s created"},
-	"tag_updated": {categoryValue, "Tag %s value updated"},
-	"tag_deleted": {categoryTag, "Tag %s deleted"},
+	apiv0.EventSystemReady: {categoryOther, "System ready"},
+	apiv0.EventTagCreated:  {categoryTag, "Tag %s created"},
+	apiv0.EventTagUpdated:  {categoryValue, "Tag %s value updated"},
+	apiv0.EventTagDeleted:  {categoryTag, "Tag %s deleted"},
 
-	"widget_created": {categoryWidget, "Widget %s created"},
-	"widget_updated": {categoryWidget, "Widget %s updated"},
-	"widget_deleted": {categoryWidget, "Widget %s deleted"},
+	apiv0.EventWidgetCreated: {categoryWidget, "Widget %s created"},
+	apiv0.EventWidgetUpdated: {categoryWidget, "Widget %s updated"},
+	apiv0.EventWidgetDeleted: {categoryWidget, "Widget %s deleted"},
 
-	"widget_type_created": {categoryWidgetType, "WidgetType %s created"},
-	"widget_type_updated": {categoryWidgetType, "WidgetType %s updated"},
-	"widget_type_deleted": {categoryWidgetType, "WidgetType %s deleted"},
+	apiv0.EventWidgetTypeCreated: {categoryWidgetType, "WidgetType %s created"},
+	apiv0.EventWidgetTypeUpdated: {categoryWidgetType, "WidgetType %s updated"},
+	apiv0.EventWidgetTypeDeleted: {categoryWidgetType, "WidgetType %s deleted"},
 
-	"scene_created": {categoryScene, "Scene %s created"},
-	"scene_updated": {categoryScene, "Scene %s updated"},
-	"scene_deleted": {categoryScene, "Scene %s deleted"},
+	apiv0.EventSceneCreated: {categoryScene, "Scene %s created"},
+	apiv0.EventSceneUpdated: {categoryScene, "Scene %s updated"},
+	apiv0.EventSceneDeleted: {categoryScene, "Scene %s deleted"},
 
-	"client_connected":    {categoryClient, "Client %s connected"},
-	"client_disconnected": {categoryClient, "Client %s disconnected"},
+	apiv0.EventClientConnected:    {categoryClient, "Client %s connected"},
+	apiv0.EventClientDisconnected: {categoryClient, "Client %s disconnected"},
 }

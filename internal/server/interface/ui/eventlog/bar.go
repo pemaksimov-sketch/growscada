@@ -46,8 +46,9 @@ const StateDisconnected = "eventlog.disconnected"
 
 // ServerEvent is a domain event received from the server's SSE stream.
 type ServerEvent struct {
-	Type string // EventType name, e.g. "tag_created"
-	ID   string // ID of the affected aggregate/client, may be empty
+	Type    string // EventType name, e.g. "tag_created"
+	ID      string // ID of the affected aggregate/client, may be empty
+	SceneID string // owning scene for widget events; empty on older servers
 	// Tag is the Tag's full new state (the JSON of GET /api/v0/tags/{id}),
 	// carried by tag_updated only; nil otherwise.
 	Tag json.RawMessage
@@ -63,6 +64,7 @@ type wireMessage struct {
 	Type      string          `json:"type"`
 	Timestamp string          `json:"timestamp"`
 	ID        string          `json:"id"`
+	SceneID   string          `json:"scene_id"`
 	Tag       json.RawMessage `json:"tag"`
 }
 
@@ -194,7 +196,7 @@ func (b *Bar) handleMessage(ctx app.Context, data string) {
 		return
 	}
 
-	ctx.NewActionWithValue(ActionServerEvent, ServerEvent{Type: msg.Type, ID: msg.ID, Tag: msg.Tag})
+	ctx.NewActionWithValue(ActionServerEvent, ServerEvent{Type: msg.Type, ID: msg.ID, SceneID: msg.SceneID, Tag: msg.Tag})
 
 	cat := categoryOther
 	text := msg.Type

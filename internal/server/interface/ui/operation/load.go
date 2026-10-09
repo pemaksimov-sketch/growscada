@@ -59,6 +59,43 @@ func (o *Operation) loadScenes(ctx app.Context) {
 	})
 }
 
+func (o *Operation) loadScene(ctx app.Context, sceneID string) {
+	ctx = o.compoCtx
+	if o.sceneReloaders == nil {
+		o.sceneReloaders = make(map[string]*uiutil.Reloader)
+	}
+	r := o.sceneReloaders[sceneID]
+	if r == nil {
+		r = &uiutil.Reloader{}
+		o.sceneReloaders[sceneID] = r
+	}
+	if !r.Start() {
+		return
+	}
+	ctx.Async(func() {
+		result, problem := uiutil.FetchJSON[livescene.Scene](o.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID)
+		ctx.Dispatch(func(ctx app.Context) {
+			if problem != nil {
+				if problem.Status != 404 {
+					ctx.NewActionWithValue(toast.ActionAdd, *problem)
+				}
+			} else {
+				for i := range o.scenes {
+					if o.scenes[i].ID == sceneID {
+						o.scenes[i] = result
+						break
+					}
+				}
+			}
+			if r.Done() {
+				o.loadScene(ctx, sceneID)
+			} else {
+				delete(o.sceneReloaders, sceneID)
+			}
+		})
+	})
+}
+
 // loadWidgets (re)loads the widgets of the selected Scene.
 func (o *Operation) loadWidgets(ctx app.Context) {
 	ctx = o.compoCtx

@@ -77,6 +77,27 @@ async function api(resource, method = 'GET', body) {
     await until(async () => await preview.textContent() === '9007199254740993');
     await page.screenshot({ path: path.join(output, 'project.png') });
 
+    // A different scene's widget must not reload the selected scene or the
+    // complete scene list. Listen before making the change through REST.
+    const other = await api('/scenes', 'POST', { name: 'Other scene', width: 300, height: 200, background_html: '' });
+    await sleep(1000); // allow the scene-created refresh to settle
+    const requests = [];
+    const recordRequest = req => { if (req.method() === 'GET') requests.push(new URL(req.url()).pathname); };
+    page.on('request', recordRequest);
+    const otherWidget = await api(`/scenes/${other.id}/widgets`, 'POST', {
+      name: 'Other counter', position: { x: 10, y: 10, z: 0 }, size: { width: 150, height: 80 },
+      origin: { x: 0, y: 0 }, rotation: { degrees: 0 }, type_id: type.id, labels: [], port_bindings: [], scene_version: 1,
+    });
+    await until(() => requests.includes(`/api/v0/scenes/${other.id}`));
+    await sleep(300);
+    assert.ok(!requests.includes('/api/v0/scenes'), JSON.stringify(requests));
+    assert.ok(!requests.includes(`/api/v0/scenes/${scene.id}/widgets`), JSON.stringify(requests));
+    requests.length = 0;
+    await api(`/scenes/${other.id}/widgets/${otherWidget.id}`, 'DELETE');
+    await until(() => requests.includes(`/api/v0/scenes/${other.id}`));
+    assert.ok(!requests.includes('/api/v0/scenes'), JSON.stringify(requests));
+    page.off('request', recordRequest);
+
     // The background and grid must not consume widget dragging.
     const box = await page.locator(`#w-preview-${widget.id}`).boundingBox();
     assert.ok(box);

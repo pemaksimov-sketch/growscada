@@ -141,6 +141,35 @@ func waitFor(t *testing.T, d time.Duration, condition func() bool) {
 	t.Fatal("condition not met before deadline")
 }
 
+func TestEventsHandlers_WidgetEventsCarrySceneID(t *testing.T) {
+	bus := eventbus.NewEventBus()
+	h := restapi.NewEventsHandler(bus, 100)
+	defer h.Close()
+	rec := newSyncRecorder()
+	cancel, done := runEventsHandler(t, h, rec)
+	defer func() { cancel(); <-done }()
+	wid := id.NewID[scene.Widget]()
+	sid := id.NewID[scene.Scene]()
+	waitFor(t, time.Second, func() bool { return strings.Contains(rec.body(), ": connected") })
+	for _, ev := range []event.Event{scene.NewWidgetCreatedEvent(wid, sid), scene.NewWidgetUpdatedEvent(wid, sid), scene.NewWidgetDeletedEvent(wid, sid)} {
+		bus.Publish(ev)
+	}
+	waitFor(t, time.Second, func() bool { return strings.Contains(rec.body(), "widget_deleted") })
+	count := 0
+	for _, msg := range sseEventMessages(t, rec.body()) {
+		if !strings.HasPrefix(msg["type"].(string), "widget_") {
+			continue
+		}
+		count++
+		if msg["id"] != wid.String() || msg["scene_id"] != sid.String() {
+			t.Errorf("wrong widget owner: %#v", msg)
+		}
+	}
+	if count != 3 {
+		t.Fatalf("got %d widget events", count)
+	}
+}
+
 func TestEventsHandlers_GetEvents_SetsSSEHeaders(t *testing.T) {
 	bus := eventbus.NewEventBus()
 	h := restapi.NewEventsHandler(bus, 100)
