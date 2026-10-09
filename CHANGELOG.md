@@ -6,6 +6,7 @@
 
 - SSE shutdown (task 26): closing the event hub terminates active streams and rejects new connections with 503. Closing, disconnecting and publishing concurrently no longer leaves idle streams waiting for the HTTP shutdown timeout. Connection lifecycle events remain available to other EventBus subscribers.
 - Project scene background (task 27): the editor and Operation share a sandboxed background renderer. The editor grid overlays the background without intercepting pointer input.
+- Exact Integer inputs (task 28): widget inputs expose an additive `raw` string for exact int64 display and BigInt arithmetic while preserving the existing `value` contract.
 
 ## [0.0.34] - 2026-10-07
 

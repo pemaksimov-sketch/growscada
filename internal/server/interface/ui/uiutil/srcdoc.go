@@ -69,6 +69,9 @@ func SetIframeSrcdoc(id, srcdoc string) {
 type Input struct {
 	// Value is the JS value of the port; nil means undefined.
 	Value any
+	// Raw preserves the exact source value for scripts that need int64 precision.
+	// Nil means no raw value is available (for example an unbound any port).
+	Raw *string
 }
 
 // MarshalJSON encodes the Input as `{"value": ...}`, omitting "value" when it
@@ -78,8 +81,9 @@ func (in Input) MarshalJSON() ([]byte, error) {
 		return []byte("{}"), nil
 	}
 	return json.Marshal(struct {
-		Value any `json:"value"`
-	}{in.Value})
+		Value any     `json:"value"`
+		Raw   *string `json:"raw,omitempty"`
+	}{in.Value, in.Raw})
 }
 
 // Inputs is the `inputs` object passed to render(inputs), keyed by port name.
@@ -106,18 +110,21 @@ func NewInput(raw, typ string) Input {
 	switch typ {
 	case "integer":
 		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
-			return Input{Value: n}
+			return Input{Value: n, Raw: &raw}
 		}
-		return Input{Value: int64(0)}
+		zero := "0"
+		return Input{Value: int64(0), Raw: &zero}
 	case "boolean":
-		return Input{Value: raw == "true"}
+		value := raw == "true"
+		normalized := strconv.FormatBool(value)
+		return Input{Value: value, Raw: &normalized}
 	case "string":
-		return Input{Value: raw}
+		return Input{Value: raw, Raw: &raw}
 	default:
 		if raw == "" {
 			return Input{}
 		}
-		return Input{Value: raw}
+		return Input{Value: raw, Raw: &raw}
 	}
 }
 
