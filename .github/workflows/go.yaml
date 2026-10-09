@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: go-ci-${{ github.event.pull_request.number || github.ref }}
+  group: go-ci-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -40,3 +40,27 @@ jobs:
 
       - name: Build
         run: make build
+
+      - name: Check SSE concurrency
+        run: go test -race ./internal/server/interface/restapi -run 'TestEventsHandlers_' -timeout=180s
+
+      - name: Prepare browser checks
+        run: |
+          npm install --prefix tests/ui --no-save --package-lock=false playwright@1.64.0
+          tests/ui/node_modules/.bin/playwright install --with-deps chromium
+          docker run -d --name growscada-browser-db -p 5432:5432 -e POSTGRES_USER=growscada -e POSTGRES_PASSWORD=growscada -e POSTGRES_DB=growscada postgres:16-alpine
+          for attempt in $(seq 1 30); do
+            if docker exec growscada-browser-db pg_isready -U growscada -d growscada; then break; fi
+            sleep 1
+          done
+          go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 -dir internal/server/infrastructure/postgres/migrations postgres 'postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable' up
+
+      - name: Check browser behavior and shutdown
+        run: node tests/ui/smoke.cjs
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-checks
+          path: artifacts/ui/
+          if-no-files-found: ignore

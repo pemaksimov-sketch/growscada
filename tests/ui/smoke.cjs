@@ -1,0 +1,121 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { chromium } = require('playwright');
+
+const root = path.resolve(__dirname, '../..');
+const output = path.join(root, 'artifacts/ui');
+fs.mkdirSync(output, { recursive: true });
+const log = fs.openSync(path.join(output, 'server.log'), 'w');
+const server = spawn('./growscada_combined_server', [], {
+  cwd: path.join(root, 'bin/growscada_combined_server'), stdio: ['ignore', log, log],
+});
+const serverExit = new Promise(resolve => server.once('exit', (code, signal) => resolve({ code, signal })));
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(check, timeout = 30000) {
+  const deadline = Date.now() + timeout;
+  let last;
+  while (Date.now() < deadline) {
+    try { if (await check()) return; } catch (error) { last = error; }
+    await sleep(100);
+  }
+  throw last || new Error('Condition timed out');
+}
+async function api(resource, method = 'GET', body) {
+  const response = await fetch(`http://localhost:9090/api/v0${resource}`, {
+    method, headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  assert.ok(response.ok, `${method} ${resource}: ${response.status} ${await response.clone().text()}`);
+  return response.json();
+}
+
+(async () => {
+  let browser;
+  let page;
+  try {
+    await until(async () => (await fetch('http://localhost:9090/api/v0/scenes')).ok);
+    const scene = await api('/scenes', 'POST', {
+      name: 'Browser QA', width: 900, height: 600,
+      background_html: '<div style="background:#1a1a2e;width:900px;height:600px">QA background</div>',
+    });
+    const tag = await api('/tags', 'POST', { name: 'qa.counter', type: 'integer', value: '9007199254740993', quality: 'good' });
+    const type = await api('/widget-types', 'POST', {
+      name: 'QA exact counter', html_template: '<div id="exact" style="color:white"></div>',
+      script: "function render(inputs){document.querySelector('#exact').textContent=BigInt(inputs.n.raw).toString();}",
+      script_language: 'javascript', default_width: 350, default_height: 80,
+      input_ports: [{ name: 'n', description: 'Counter', type_hint: 'integer' }],
+    });
+    const widget = await api(`/scenes/${scene.id}/widgets`, 'POST', {
+      name: 'QA counter', position: { x: 100, y: 100, z: 0 }, size: { width: 350, height: 80 },
+      origin: { x: 0, y: 0 }, rotation: { degrees: 0 }, type_id: type.id,
+      labels: [], port_bindings: [{ port_name: 'n', tag_id: tag.id }], scene_version: 1,
+    });
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+    await context.addInitScript(({ sceneID }) => {
+      localStorage.setItem('root:mode', JSON.stringify('project'));
+      localStorage.setItem('project:sceneID', JSON.stringify(sceneID));
+      localStorage.setItem('operation:sceneID', JSON.stringify(sceneID));
+    }, { sceneID: scene.id });
+    page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto('http://localhost:8080');
+    const background = page.locator('iframe[title="Scene background"]');
+    await background.waitFor({ state: 'visible', timeout: 60000 });
+    assert.equal(await background.getAttribute('sandbox'), '');
+    assert.equal(await background.evaluate(el => getComputedStyle(el).pointerEvents), 'none');
+    assert.equal(await background.evaluate(el => getComputedStyle(el.nextElementSibling).pointerEvents), 'none');
+    assert.match(await background.getAttribute('srcdoc'), /#1a1a2e/);
+    const preview = page.frameLocator(`#w-preview-${widget.id}`).locator('#exact');
+    await until(async () => await preview.textContent() === '9007199254740993');
+    await page.screenshot({ path: path.join(output, 'project.png') });
+
+    // The background and grid must not consume widget dragging.
+    const box = await page.locator(`#w-preview-${widget.id}`).boundingBox();
+    assert.ok(box);
+    await page.mouse.move(box.x + 30, box.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 70, box.y + 60, { steps: 8 });
+    await page.mouse.up();
+    await until(async () => {
+      const moved = await api(`/scenes/${scene.id}/widgets/${widget.id}`);
+      return moved.position.x === 140 && moved.position.y === 130;
+    });
+
+    // A change made by another client arrives through SSE without reloading.
+    const current = await api(`/scenes/${scene.id}`);
+    await api(`/scenes/${scene.id}`, 'PUT', {
+      name: current.name, width: current.width, height: current.height, version: current.version,
+      background_html: '<div style="background:#16213e;width:900px;height:600px">Updated QA background</div>',
+    });
+    await until(async () => (await background.getAttribute('srcdoc')).includes('Updated QA background'));
+    await page.getByText('Operation', { exact: true }).click();
+    await background.waitFor({ state: 'visible' });
+    await until(async () => {
+      for (const frame of page.frames()) {
+        if (await frame.locator('#exact').count() && await frame.locator('#exact').textContent() === '9007199254740993') return true;
+      }
+      return false;
+    });
+    await page.screenshot({ path: path.join(output, 'operation.png') });
+    assert.deepEqual(errors, [], 'Browser runtime errors');
+
+    const stoppedAt = Date.now();
+    server.kill('SIGTERM');
+    const outcome = await Promise.race([serverExit, sleep(3000).then(() => { throw new Error('Shutdown waited for SSE'); })]);
+    assert.equal(outcome.code, 0, JSON.stringify(outcome));
+    assert.ok(Date.now() - stoppedAt < 3000);
+    await page.getByText(/No connection to the server/).first().waitFor({ timeout: 10000 });
+    console.log('PASS: background, live update, widget drag, exact Integer and SSE shutdown');
+  } catch (error) {
+    if (page) await page.screenshot({ path: path.join(output, 'failure.png') }).catch(() => {});
+    throw error;
+  } finally {
+    if (browser) await browser.close();
+    if (server.exitCode === null) server.kill('SIGKILL');
+    fs.closeSync(log);
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
