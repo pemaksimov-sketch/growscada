@@ -20,8 +20,8 @@ func NewEventsHandler(bus eventbus.EventBus, maxClients int) *EventsHandlers {
 	return &EventsHandlers{hub: newEventHub(bus, maxClients)}
 }
 
-// Close detaches the hub from the EventBus. Connected clients are left to be
-// disconnected by their own request context cancellation.
+// Close ends active streams, rejects new connections and detaches the hub
+// from the EventBus so HTTP shutdown does not wait for idle SSE handlers.
 func (h *EventsHandlers) Close() {
 	h.hub.Close()
 }
@@ -40,7 +40,7 @@ func (h *EventsHandlers) GetEvents(w http.ResponseWriter, r *http.Request) {
 	// normal JSON error instead of an already-committed SSE stream.
 	c, ok := h.hub.addClient()
 	if !ok {
-		sendJSONResponse(w, http.StatusServiceUnavailable, NewServiceUnavailableError("too many concurrent event stream connections", r.URL.Path))
+		sendJSONResponse(w, http.StatusServiceUnavailable, NewServiceUnavailableError("event stream unavailable: connection limit reached or server shutting down", r.URL.Path))
 		return
 	}
 	defer h.hub.removeClient(c)

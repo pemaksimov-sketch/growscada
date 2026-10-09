@@ -349,19 +349,14 @@ func BenchmarkEventsHandlers_Publish_NoClients(b *testing.B) {
 	}
 }
 
-// TestEventsHandlers_Close_StopsForwardingNewEvents guards the fix for the
-// CODE_REVIEW.md finding that eventHub.Close() was never wired into the
-// server's graceful shutdown. It asserts Close()'s actual effect: once
-// called, the hub is unsubscribed from the EventBus, so events published
-// afterwards never reach an already-connected client — even though, per
-// eventHub.Close's contract, the connection itself is left open until its
-// own request context is canceled.
+// Close must end an idle stream without requiring request cancellation.
 func TestEventsHandlers_Close_StopsForwardingNewEvents(t *testing.T) {
 	bus := eventbus.NewEventBus()
 	h := restapi.NewEventsHandler(bus, 100)
 
 	rec := newSyncRecorder()
 	cancel, done := runEventsHandler(t, h, rec)
+	defer cancel()
 	waitFor(t, time.Second, func() bool { return strings.Contains(rec.body(), ": connected") })
 
 	tagID := id.NewID[tag.Tag]()
@@ -369,23 +364,83 @@ func TestEventsHandlers_Close_StopsForwardingNewEvents(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return strings.Contains(rec.body(), "tag_created") })
 
 	h.Close()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not terminate the idle SSE handler")
+	}
 
 	sceneID := id.NewID[scene.Scene]()
 	bus.Publish(scene.NewSceneCreatedEvent(sceneID))
 
-	// There is no positive signal to wait for here — Close() means this
-	// event should never arrive. EventBus.Publish calls subscribers
-	// synchronously, so if the hub were still subscribed the client's
-	// buffered channel would already hold the message by the time Publish
-	// returns, and the handler's read loop would drain it into rec within
-	// microseconds; a short fixed wait is enough to catch a regression.
-	time.Sleep(50 * time.Millisecond)
 	if strings.Contains(rec.body(), "scene_created") {
 		t.Error("expected no events to be forwarded after Close(), but scene_created was received")
 	}
 
 	cancel()
 	<-done
+}
+
+func TestEventsHandlers_GetEvents_RejectsAfterClose(t *testing.T) {
+	h := restapi.NewEventsHandler(eventbus.NewEventBus(), 100)
+	h.Close()
+	rec := newSyncRecorder()
+	cancel, done := runEventsHandler(t, h, rec)
+	defer cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("a new SSE request remained open after Close")
+	}
+	if rec.code() != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.code())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("expected JSON problem response, got %q", ct)
+	}
+}
+
+func TestEventsHandlers_Close_ConcurrentWithDisconnectAndPublish(t *testing.T) {
+	bus := eventbus.NewEventBus()
+	h := restapi.NewEventsHandler(bus, 100)
+	var cancels []func()
+	var handlers []<-chan struct{}
+	for i := 0; i < 10; i++ {
+		rec := newSyncRecorder()
+		cancel, done := runEventsHandler(t, h, rec)
+		defer cancel()
+		cancels = append(cancels, cancel)
+		handlers = append(handlers, done)
+		waitFor(t, time.Second, func() bool { return strings.Contains(rec.body(), ": connected") })
+	}
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	for _, cancel := range cancels {
+		workers.Add(3)
+		go func() { defer workers.Done(); <-start; h.Close() }()
+		go func() { defer workers.Done(); <-start; cancel() }()
+		go func() {
+			defer workers.Done()
+			<-start
+			bus.Publish(tag.NewTagCreatedEvent(id.NewID[tag.Tag]()))
+		}()
+	}
+	close(start)
+	workersDone := make(chan struct{})
+	go func() { workers.Wait(); close(workersDone) }()
+	select {
+	case <-workersDone:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent Close, disconnect and Publish deadlocked")
+	}
+	for _, done := range handlers {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatal("SSE handler did not terminate")
+		}
+	}
+	h.Close()
 }
 
 // TestEventsHandlers_GetEvents_RejectsBeyondMaxClients guards the fix for

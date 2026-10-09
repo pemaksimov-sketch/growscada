@@ -1,5 +1,11 @@
 # growscada [CHANGELOG](https://keepachangelog.com/en/1.1.0/)
 
+## [Unreleased]
+
+### Fixed
+
+- SSE shutdown (task 26): closing the event hub terminates active streams and rejects new connections with 503. Closing, disconnecting and publishing concurrently no longer leaves idle streams waiting for the HTTP shutdown timeout. Connection lifecycle events remain available to other EventBus subscribers.
+
 ## [0.0.34] - 2026-10-07
 
 ### Changed

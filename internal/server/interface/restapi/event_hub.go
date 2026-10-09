@@ -26,8 +26,10 @@ type eventHub struct {
 	subscriptions []eventbus.Subscription
 	maxClients    int
 
-	mu      sync.Mutex
-	clients map[*eventClient]struct{}
+	mu        sync.Mutex
+	clients   map[*eventClient]struct{}
+	closed    bool
+	closeOnce sync.Once
 }
 
 type eventClient struct {
@@ -56,12 +58,25 @@ func (h *eventHub) Publish(e event.Event) {
 	h.bus.Publish(e)
 }
 
-// Close detaches the hub from the EventBus. Connected clients are left to be
-// disconnected by their own request context cancellation.
+// Close ends every event stream and rejects future connections before
+// detaching from the EventBus. It is safe to call concurrently or repeatedly.
 func (h *eventHub) Close() {
-	for _, sub := range h.subscriptions {
-		h.bus.Unsubscribe(sub)
-	}
+	h.closeOnce.Do(func() {
+		h.mu.Lock()
+		h.closed = true
+		for c := range h.clients {
+			if !c.closed {
+				c.closed = true
+				close(c.messages)
+			}
+			delete(h.clients, c)
+		}
+		h.mu.Unlock()
+
+		for _, sub := range h.subscriptions {
+			h.bus.Unsubscribe(sub)
+		}
+	})
 }
 
 func (h *eventHub) broadcast(e event.Event) {
@@ -99,13 +114,13 @@ func (h *eventHub) broadcast(e event.Event) {
 }
 
 // addClient registers a new SSE connection and returns its message channel.
-// It refuses to register beyond maxClients, returning ok=false so the
+// It refuses to register after Close or beyond maxClients, returning ok=false so the
 // caller can reject the connection before committing to any response.
 func (h *eventHub) addClient() (c *eventClient, ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if len(h.clients) >= h.maxClients {
+	if h.closed || len(h.clients) >= h.maxClients {
 		return nil, false
 	}
 
