@@ -154,8 +154,10 @@ func (p *Project) renderSceneCanvas() app.UI {
 	}
 
 	sceneWidth, sceneHeight := 1920, 1080
+	backgroundHTML := ""
 	for _, sc := range p.scenes {
 		if sc.ID == p.selectedSceneID {
+			backgroundHTML = sc.BackgroundHTML
 			if sc.Width > 0 {
 				sceneWidth = sc.Width
 			}
@@ -167,7 +169,17 @@ func (p *Project) renderSceneCanvas() app.UI {
 	}
 
 	textMuted := uiutil.IframeTextMuted()
-	widgetEls := make([]app.UI, 0, len(p.widgets))
+	widgetEls := make([]app.UI, 0, len(p.widgets)+2)
+	if backgroundHTML != "" {
+		widgetEls = append(widgetEls, uiutil.SceneBackground(backgroundHTML))
+	}
+	widgetEls = append(widgetEls, app.Div().
+		Attr("aria-hidden", "true").
+		Style("position", "absolute").
+		Style("inset", "0").
+		Style("pointer-events", "none").
+		Style("background-image", "radial-gradient(circle, var(--dot-color) 1px, transparent 1px)").
+		Style("background-size", "24px 24px"))
 	for _, w := range p.widgets {
 		widgetEls = append(widgetEls, p.renderWidget(w, textMuted))
 	}
@@ -190,8 +202,6 @@ func (p *Project) renderSceneCanvas() app.UI {
 		Style("width", fmt.Sprintf("%dpx", sceneWidth)).
 		Style("height", fmt.Sprintf("%dpx", sceneHeight)).
 		Style("background-color", "var(--surface)").
-		Style("background-image", "radial-gradient(circle, var(--dot-color) 1px, transparent 1px)").
-		Style("background-size", "24px 24px").
 		Style("flex-shrink", "0").
 		Style("cursor", canvasCursor).
 		// OnMouseMove / OnMouseUp are intentionally on the root Render() div
