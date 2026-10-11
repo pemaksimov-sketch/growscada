@@ -1,21 +1,21 @@
 meta {
-  name: foreign_widget_get
+  name: deleted_project_resources
   type: http
-  seq: 55
+  seq: 63
 }
 
 get {
-  url: {{baseURL}}/api/v0/projects/{{projectA}}/scenes/{{projectSceneB}}/widgets/{{projectWidgetB}}
+  url: {{baseURL}}/api/v0/projects/{{projectA}}/tags
   body: none
   auth: none
 }
 
 tests {
-  test("foreign_widget_get: status and schema header", function () {
+  test("deleted_project_resources: status and schema header", function () {
     expect(res.getStatus()).to.equal(404);
     expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
   });
-  test("foreign_widget_get: response", function () {
+  test("deleted_project_resources: response", function () {
     const body = res.getBody();
     expect(body.status).to.equal(404); expect(body.title).to.be.a("string").and.not.empty;
   });
