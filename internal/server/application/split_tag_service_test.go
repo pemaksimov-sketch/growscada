@@ -112,12 +112,12 @@ func TestSplitTagService_SeparatesDefinitionVersionFromRuntimeSequence(t *testin
 	if created.Version != 1 || created.Sequence != 1 || created.Origin != entityorigin.Project.String() || created.Value != "9007199254740993" {
 		t.Fatalf("create: %+v", created)
 	}
-	for _, value := range []string{"9007199254740994", "9007199254740995"} {
+	for i, value := range []string{"9007199254740994", "9007199254740995"} {
 		updated, err := svc.SetTagValueByID(ctx, appdto.UpdateTagInput{ID: created.ID, Value: value, Quality: "good", Version: -999})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if updated.Version != created.Version || updated.Sequence != int64(runtime.writes+1) {
+		if updated.Version != created.Version || updated.Sequence != int64(i+2) {
 			t.Fatalf("runtime write changed edit version or lost sequence: %+v", updated)
 		}
 		created = updated
