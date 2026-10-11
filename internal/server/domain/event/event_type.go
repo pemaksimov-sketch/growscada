@@ -18,24 +18,25 @@ var _ fmt.Stringer = EventType{}
 // may receive is defined once.
 // A new value must also be added to eventTypeNames.
 var (
-	EventTypeSystemReady        = EventType{eventType: 1}
-	EventTypeTagCreated         = EventType{eventType: 2}
-	EventTypeTagUpdated         = EventType{eventType: 3}
-	EventTypeTagDeleted         = EventType{eventType: 4}
-	EventTypeWidgetTypeCreated  = EventType{eventType: 5}
-	EventTypeWidgetTypeUpdated  = EventType{eventType: 6}
-	EventTypeWidgetTypeDeleted  = EventType{eventType: 7}
-	EventTypeWidgetCreated      = EventType{eventType: 8}
-	EventTypeWidgetUpdated      = EventType{eventType: 9}
-	EventTypeWidgetDeleted      = EventType{eventType: 10}
-	EventTypeSceneCreated       = EventType{eventType: 11}
-	EventTypeSceneUpdated       = EventType{eventType: 12}
-	EventTypeSceneDeleted       = EventType{eventType: 13}
-	EventTypeClientConnected    = EventType{eventType: 14}
-	EventTypeClientDisconnected = EventType{eventType: 15}
-	EventTypeProjectCreated     = EventType{eventType: 16}
-	EventTypeProjectUpdated     = EventType{eventType: 17}
-	EventTypeProjectDeleted     = EventType{eventType: 18}
+	EventTypeSystemReady          = EventType{eventType: 1}
+	EventTypeTagCreated           = EventType{eventType: 2}
+	EventTypeTagUpdated           = EventType{eventType: 3}
+	EventTypeTagDeleted           = EventType{eventType: 4}
+	EventTypeWidgetTypeCreated    = EventType{eventType: 5}
+	EventTypeWidgetTypeUpdated    = EventType{eventType: 6}
+	EventTypeWidgetTypeDeleted    = EventType{eventType: 7}
+	EventTypeWidgetCreated        = EventType{eventType: 8}
+	EventTypeWidgetUpdated        = EventType{eventType: 9}
+	EventTypeWidgetDeleted        = EventType{eventType: 10}
+	EventTypeSceneCreated         = EventType{eventType: 11}
+	EventTypeSceneUpdated         = EventType{eventType: 12}
+	EventTypeSceneDeleted         = EventType{eventType: 13}
+	EventTypeClientConnected      = EventType{eventType: 14}
+	EventTypeClientDisconnected   = EventType{eventType: 15}
+	EventTypeProjectCreated       = EventType{eventType: 16}
+	EventTypeProjectUpdated       = EventType{eventType: 17}
+	EventTypeProjectDeleted       = EventType{eventType: 18}
+	EventTypeTagDefinitionUpdated = EventType{eventType: 19}
 )
 
 // eventTypeNames is the single source of truth for known event types:
@@ -63,6 +64,7 @@ var eventTypeNames = []struct {
 	{EventTypeProjectCreated, "project_created"},
 	{EventTypeProjectUpdated, "project_updated"},
 	{EventTypeProjectDeleted, "project_deleted"},
+	{EventTypeTagDefinitionUpdated, "tag_definition_updated"},
 }
 
 // AllEventTypes returns every known EventType.
