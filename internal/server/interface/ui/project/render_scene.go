@@ -84,7 +84,7 @@ func (p *Project) renderSceneTabs() app.UI {
 						Text(sc.Name).
 						OnClick(func(ctx app.Context, e app.Event) {
 							p.selectedSceneID = sc.ID.String()
-							ctx.LocalStorage().Set("project:sceneID", sc.ID.String())
+							p.tasks.Store("project:sceneID", sc.ID.String())
 							p.clearWidgetSelection(ctx)
 							p.syncSceneEditingFields()
 							p.loadWidgets(ctx)

@@ -81,7 +81,7 @@ func (p *Project) renderTagListButtons() app.UI {
 			p.newTagName = "New Tag"
 			p.newTagType = "string"
 			p.selectedTagID = ""
-			ctx.LocalStorage().Set("project:tagID", "")
+			p.tasks.Store("project:tagID", "")
 		})
 	if createDisabled {
 		createBtn = createBtn.
@@ -119,7 +119,7 @@ func (p *Project) renderTagList() app.UI {
 			OnClick(func(ctx app.Context, e app.Event) {
 				p.selectedTagID = id
 				p.creatingTag = false
-				ctx.LocalStorage().Set("project:tagID", id)
+				p.tasks.Store("project:tagID", id)
 			})
 		if p.selectedTagID == id {
 			item = item.Style("background", "var(--accent)").Style("color", "var(--accent-text)")
