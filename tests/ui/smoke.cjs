@@ -185,6 +185,8 @@ async function api(resource, method = 'GET', body) {
     await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).position.x === 160);
     assert.deepEqual(conflicts, [], 'Drag after reconciliation conflicted');
     assert.deepEqual(errors, [], 'Browser runtime errors');
+	await page.getByText('Operation', { exact: true }).click();
+	await background.waitFor({ state: 'visible' });
 
     const stoppedAt = Date.now();
     server.kill('SIGTERM');
