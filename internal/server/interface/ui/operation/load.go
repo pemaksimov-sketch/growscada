@@ -13,49 +13,25 @@ import (
 // on server events and after a reconnection.
 
 func (o *Operation) loadWidgetTypes(ctx app.Context) {
-	ctx = o.compoCtx
-	if !o.widgetTypesReloader.Start() {
-		return
-	}
-	url := o.apiServerURL + apiv0.PathPrefix + "/widget-types"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getWidgetTypesResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				byID := make(map[string]livescene.WidgetType, len(result.WidgetTypes))
-				for _, wt := range result.WidgetTypes {
-					byID[wt.ID] = wt
-				}
-				o.widgetTypes = byID
+	uiutil.LoadJSON(o.compoCtx, &o.widgetTypesReloader, uiutil.JSONLoad[getWidgetTypesResponse]{
+		URL: o.apiServerURL + apiv0.PathPrefix + "/widget-types", Reload: o.loadWidgetTypes,
+		Apply: func(ctx app.Context, result getWidgetTypesResponse) {
+			byID := make(map[string]livescene.WidgetType, len(result.WidgetTypes))
+			for _, wt := range result.WidgetTypes {
+				byID[wt.ID] = wt
 			}
-			if o.widgetTypesReloader.Done() {
-				o.loadWidgetTypes(ctx)
-			}
-		})
+			o.widgetTypes = byID
+		},
 	})
 }
 
 func (o *Operation) loadScenes(ctx app.Context) {
-	ctx = o.compoCtx
-	if !o.scenesReloader.Start() {
-		return
-	}
-	url := o.apiServerURL + apiv0.PathPrefix + "/scenes"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getScenesResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				o.scenes = result.Scenes
-				o.selectScene(ctx, selectScene(o.scenes, o.selectedSceneID))
-			}
-			if o.scenesReloader.Done() {
-				o.loadScenes(ctx)
-			}
-		})
+	uiutil.LoadJSON(o.compoCtx, &o.scenesReloader, uiutil.JSONLoad[getScenesResponse]{
+		URL: o.apiServerURL + apiv0.PathPrefix + "/scenes", Reload: o.loadScenes,
+		Apply: func(ctx app.Context, result getScenesResponse) {
+			o.scenes = result.Scenes
+			o.selectScene(ctx, selectScene(o.scenes, o.selectedSceneID))
+		},
 	})
 }
 
@@ -98,52 +74,25 @@ func (o *Operation) loadScene(ctx app.Context, sceneID string) {
 
 // loadWidgets (re)loads the widgets of the selected Scene.
 func (o *Operation) loadWidgets(ctx app.Context) {
-	ctx = o.compoCtx
 	if o.selectedSceneID == "" {
-		o.widgets, o.widgetsSceneID = nil, ""
-		return
-	}
-	if !o.widgetsReloader.Start() {
+		o.widgets = nil
+		o.widgetsSceneID = ""
 		return
 	}
 	sceneID := o.selectedSceneID
-	url := o.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getWidgetsResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			rerun := o.widgetsReloader.Done()
-			switch {
-			case o.selectedSceneID != sceneID:
-				rerun = true // the selection changed meanwhile: load the new Scene
-			case problem != nil:
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			default:
-				o.widgets, o.widgetsSceneID = result.Widgets, sceneID
-			}
-			if rerun {
-				o.loadWidgets(ctx)
-			}
-		})
+	uiutil.LoadJSON(o.compoCtx, &o.widgetsReloader, uiutil.JSONLoad[getWidgetsResponse]{
+		URL: o.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets", Reload: o.loadWidgets,
+		Accept: func() bool { return o.selectedSceneID == sceneID },
+		Apply: func(ctx app.Context, result getWidgetsResponse) {
+			o.widgets = result.Widgets
+			o.widgetsSceneID = sceneID
+		},
 	})
 }
 
 func (o *Operation) loadTags(ctx app.Context) {
-	ctx = o.compoCtx
-	if !o.tagsReloader.Start() {
-		return
-	}
-	url := o.apiServerURL + apiv0.PathPrefix + "/tags"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getTagsResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				o.tags = mergeTags(o.tags, result.Tags)
-			}
-			if o.tagsReloader.Done() {
-				o.loadTags(ctx)
-			}
-		})
+	uiutil.LoadJSON(o.compoCtx, &o.tagsReloader, uiutil.JSONLoad[getTagsResponse]{
+		URL: o.apiServerURL + apiv0.PathPrefix + "/tags", Reload: o.loadTags,
+		Apply: func(ctx app.Context, result getTagsResponse) { o.tags = mergeTags(o.tags, result.Tags) },
 	})
 }

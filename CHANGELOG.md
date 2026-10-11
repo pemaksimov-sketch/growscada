@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Live UI loading (task 29): Project applies versioned tag values directly from SSE instead of requesting all tags on every value update. Project, Library and Operation share coalesced list loading; editor merges and event routing are separated and tested.
+
 - Tag binding types (task 25): creating or editing a widget rejects missing tags and incompatible port types with 400. Narrowing a WidgetType port hint is rejected before saving when existing bindings are incompatible; widening to any type remains allowed.
 
 - Scoped widget events (task 24): API schema 0.2 exposes the owning `scene_id`; Project and Operation refresh only that scene and, when selected, its widgets. Shared event constants and regression tests keep routing aligned with the API.

@@ -514,7 +514,7 @@ func TestUpdateWidgetType_RemovedPort_CleansBindingsOnAllWidgetsInSameScene(t *t
 		OriginX:      0.5,
 		OriginY:      0.5,
 		TypeID:       createdType.ID,
-		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: uuid.New()}},
+		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: createBoundTag(t)}},
 	}
 	first, err := sceneSvc.CreateWidget(ctx, sc.ID, sc.Version, widgetInput)
 	if err != nil {
@@ -603,7 +603,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 		OriginX:      0.5,
 		OriginY:      0.5,
 		TypeID:       createdType.ID,
-		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: uuid.New()}},
+		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: createBoundTag(t)}},
 	})
 	if err != nil {
 		t.Fatalf("CreateWidget: %v", err)
@@ -725,7 +725,7 @@ func TestUpdateWidgetType_RemovedPort_OutboxHoldsEventsOfEveryChangedScene(t *te
 	}
 	bound := appdto.WidgetInput{
 		Name: "bound", Width: 100, Height: 100, OriginX: 0.5, OriginY: 0.5, TypeID: createdType.ID,
-		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: uuid.New()}},
+		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: createBoundTag(t)}},
 	}
 	unbound := bound
 	unbound.PortBindings = nil

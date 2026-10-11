@@ -84,6 +84,9 @@ async function api(resource, method = 'GET', body) {
     const requests = [];
     const recordRequest = req => { if (req.method() === 'GET') requests.push(new URL(req.url()).pathname); };
     page.on('request', recordRequest);
+    await api(`/tags/${tag.id}/value`, 'PATCH', {value:'9007199254740993', quality:'good', version:1});
+    await sleep(500);
+    assert.ok(!requests.includes('/api/v0/tags'), 'Project reread all tags on a value event: '+JSON.stringify(requests));
     const otherWidget = await api(`/scenes/${other.id}/widgets`, 'POST', {
       name: 'Other counter', position: { x: 10, y: 10, z: 0 }, size: { width: 150, height: 80 },
       origin: { x: 0, y: 0 }, rotation: { degrees: 0 }, type_id: type.id, labels: [], port_bindings: [], scene_version: 1,

@@ -7,7 +7,6 @@ import (
 
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/interface/ui/eventlog"
-	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uidto"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 )
@@ -63,25 +62,11 @@ func (l *Library) OnMount(ctx app.Context) {
 
 // loadList (re)loads the widget type list; concurrent requests are coalesced.
 func (l *Library) loadList(ctx app.Context) {
-	ctx = l.compoCtx
-	if !l.reloader.Start() {
-		return
-	}
 	l.loading = true
-	url := l.apiServerURL + apiv0.PathPrefix + "/widget-types"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getWidgetTypesResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			l.loading = false
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				l.setWidgetTypes(ctx, result.WidgetTypes)
-			}
-			if l.reloader.Done() {
-				l.loadList(ctx)
-			}
-		})
+	uiutil.LoadJSON(l.compoCtx, &l.reloader, uiutil.JSONLoad[getWidgetTypesResponse]{
+		URL: l.apiServerURL + apiv0.PathPrefix + "/widget-types", Reload: l.loadList,
+		Finished: func() { l.loading = false },
+		Apply:    func(ctx app.Context, result getWidgetTypesResponse) { l.setWidgetTypes(ctx, result.WidgetTypes) },
 	})
 }
 

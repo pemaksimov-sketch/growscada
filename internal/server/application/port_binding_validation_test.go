@@ -10,6 +10,15 @@ import (
 	"github.com/kipitix/growscada/internal/server/application/appdto"
 )
 
+func createBoundTag(t *testing.T) uuid.UUID {
+	t.Helper()
+	tag, err := newService().CreateTag(context.Background(), appdto.CreateTagInput{Name: "binding-" + uuid.NewString(), Type: "integer", Value: "1", Quality: "good"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tag.ID
+}
+
 func TestPortBindingTypeValidation(t *testing.T) {
 	for _, tc := range []struct {
 		hint, tagType, value string
