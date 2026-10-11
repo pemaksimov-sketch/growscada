@@ -30,6 +30,7 @@ async function api(resource, method = 'GET', body) {
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   assert.ok(response.ok, `${method} ${resource}: ${response.status} ${await response.clone().text()}`);
+  if (response.status === 204) return null;
   return response.json();
 }
 
