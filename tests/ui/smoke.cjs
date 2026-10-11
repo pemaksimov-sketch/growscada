@@ -57,7 +57,9 @@ async function api(resource, method = 'GET', body) {
       labels: [], port_bindings: [{ port_name: 'n', tag_id: tag.id }], scene_version: 1,
     });
     browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+    // Intercept the actual HTTP requests in slow-save checks, including those
+    // that a PWA service worker would otherwise handle outside page routing.
+    const context = await browser.newContext({ viewport: { width: 1600, height: 1000 }, serviceWorkers: 'block' });
     await context.addInitScript(({ sceneID }) => {
       // Playwright also injects this into sandboxed srcdoc frames. Only the
       // application window owns preferences; sandbox frames cannot use storage.
