@@ -10,6 +10,7 @@ import (
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
+	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/domain/version"
 )
 
@@ -25,16 +26,18 @@ type WidgetTypeService interface {
 type widgetTypeServiceImpl struct {
 	repository      library.WidgetTypeRepository
 	sceneRepository scene.SceneRepository
+	tagRepository   tag.TagRepository
 }
 
 var _ WidgetTypeService = (*widgetTypeServiceImpl)(nil)
 
 // NewWidgetTypeService returns the widget type service. The events of its
 // changes are recorded by the aggregates and saved with them (ADR 0008).
-func NewWidgetTypeService(aRepository library.WidgetTypeRepository, aSceneRepository scene.SceneRepository) WidgetTypeService {
+func NewWidgetTypeService(aRepository library.WidgetTypeRepository, aSceneRepository scene.SceneRepository, tagRepo tag.TagRepository) WidgetTypeService {
 	return &widgetTypeServiceImpl{
 		repository:      aRepository,
 		sceneRepository: aSceneRepository,
+		tagRepository:   tagRepo,
 	}
 }
 
@@ -106,6 +109,11 @@ func (s widgetTypeServiceImpl) UpdateWidgetType(ctx context.Context, rawID uuid.
 		return appdto.WidgetType{}, fmt.Errorf("cannot update widget type: %w", err)
 	}
 
+	// Reject a narrowed hint before saving anything; never silently discard
+	// an engineer's existing binding just because its type became incompatible.
+	if err := s.validateChangedTypeHints(ctx, found, updated); err != nil {
+		return appdto.WidgetType{}, fmt.Errorf("cannot update widget type: %w", err)
+	}
 	found, err = s.repository.Save(ctx, updated)
 	if err != nil {
 		return appdto.WidgetType{}, fmt.Errorf("cannot save widget type: %w", err)

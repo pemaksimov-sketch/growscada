@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Tag binding types (task 25): creating or editing a widget rejects missing tags and incompatible port types with 400. Narrowing a WidgetType port hint is rejected before saving when existing bindings are incompatible; widening to any type remains allowed.
+
 - Scoped widget events (task 24): API schema 0.2 exposes the owning `scene_id`; Project and Operation refresh only that scene and, when selected, its widgets. Shared event constants and regression tests keep routing aligned with the API.
 
 - SSE shutdown (task 26): closing the event hub terminates active streams and rejects new connections with 503. Closing, disconnecting and publishing concurrently no longer leaves idle streams waiting for the HTTP shutdown timeout. Connection lifecycle events remain available to other EventBus subscribers.

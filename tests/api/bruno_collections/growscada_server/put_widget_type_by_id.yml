@@ -24,6 +24,12 @@ http:
       }
   auth: inherit
 
+docs: |
+  Changing a port's type_hint to a type incompatible with an existing
+  Widget binding returns 400 before saving the definition. Unbind or
+  replace the incompatible Tag first. An empty hint accepts any type.
+  Removing a port retains the existing orphan-binding cleanup behavior.
+
 settings:
   encodeUrl: true
   timeout: 0

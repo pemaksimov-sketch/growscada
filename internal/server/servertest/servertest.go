@@ -120,8 +120,8 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 	tagSvc := application.NewTagService(repositories.NewTagRepositoryPostgres(db, onCommit))
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(db, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(db, onCommit)
-	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo)
-	sceneSvc := application.NewSceneService(sceneRepo, wtRepo)
+	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, tagRepo)
+	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, tagRepo)
 	router := restapi.NewRouter(tagSvc, wtSvc, sceneSvc, bus, 100)
 
 	srv := httptest.NewServer(router.ServeMux())

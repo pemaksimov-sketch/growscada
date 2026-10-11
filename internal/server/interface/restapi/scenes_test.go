@@ -32,8 +32,8 @@ func newRouterWithScenes() *restapi.APIRouter {
 	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo)
-	sceneSvc := application.NewSceneService(sceneRepo, wtRepo)
+	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
+	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, repositories.NewTagRepositoryPostgres(testDB))
 	return restapi.NewRouter(tagSvc, wtSvc, sceneSvc, eventbus.NewEventBus(), 100)
 }
 
@@ -41,7 +41,7 @@ func createSceneViaService(t *testing.T, input appdto.SceneInput) appdto.Scene {
 	t.Helper()
 	repo := repositories.NewSceneRepositoryPostgres(testDB)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
-	svc := application.NewSceneService(repo, wtRepo)
+	svc := application.NewSceneService(repo, wtRepo, repositories.NewTagRepositoryPostgres(testDB))
 	resp, err := svc.CreateScene(context.Background(), input)
 	if err != nil {
 		t.Fatalf("createSceneViaService: %v", err)
@@ -314,7 +314,7 @@ func TestPutScenesByID_Conflict_Returns409(t *testing.T) {
 	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo)
+	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
 	router := restapi.NewRouter(tagSvc, wtSvc, svc, eventbus.NewEventBus(), 100)
 
 	body, _ := json.Marshal(apiv0.UpdateSceneRequest{Name: "x", Width: 800, Height: 600})

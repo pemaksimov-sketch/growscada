@@ -29,14 +29,14 @@ func cleanWidgetTypes(t *testing.T) {
 func newWidgetTypeService() application.WidgetTypeService {
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	return application.NewWidgetTypeService(repo, sceneRepo)
+	return application.NewWidgetTypeService(repo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
 }
 
 func newWidgetTypeServiceWithBus(t *testing.T) (application.WidgetTypeService, eventbus.EventBus) {
 	bus, onCommit := deliveredOnCommit(t)
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB, onCommit)
-	return application.NewWidgetTypeService(repo, sceneRepo), bus
+	return application.NewWidgetTypeService(repo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB)), bus
 }
 
 var testCreateWidgetTypeInput = appdto.WidgetTypeInput{
@@ -615,7 +615,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 			t.Fatalf("concurrent UpdateScene: %v", err)
 		}
 	}
-	racingSvc := application.NewWidgetTypeService(repositories.NewWidgetTypeRepositoryPostgres(testDB), sceneRepo)
+	racingSvc := application.NewWidgetTypeService(repositories.NewWidgetTypeRepositoryPostgres(testDB), sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
 
 	_, err = racingSvc.UpdateWidgetType(ctx, createdType.ID, createdType.Version, appdto.WidgetTypeInput{
 		Name:           createdType.Name,

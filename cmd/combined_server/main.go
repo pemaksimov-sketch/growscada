@@ -113,8 +113,8 @@ func main() {
 	sceneRepository := repositories.NewSceneRepositoryPostgres(sqlDB, notifyDispatcher)
 	// Create services
 	tagService := application.NewTagService(tagRepository)
-	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository)
-	sceneService := application.NewSceneService(sceneRepository, widgetTypeRepository)
+	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository)
+	sceneService := application.NewSceneService(sceneRepository, widgetTypeRepository, tagRepository)
 	// Create router
 	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients)
 	// Register the event hub shutdown handler. The outbox is drained first,

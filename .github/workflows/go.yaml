@@ -36,8 +36,18 @@ jobs:
 
       - name: Cache PostgreSQL image from Docker's public ECR mirror
         run: |
-          docker pull public.ecr.aws/docker/library/postgres:16-alpine
-          docker tag public.ecr.aws/docker/library/postgres:16-alpine postgres:16-alpine
+          pulled=false
+          for image in public.ecr.aws/docker/library/postgres:16-alpine postgres:16-alpine; do
+            for attempt in 1 2 3; do
+              if docker pull "$image"; then
+                docker tag "$image" postgres:16-alpine
+                pulled=true
+                break 2
+              fi
+              sleep 10
+            done
+          done
+          test "$pulled" = true
 
       - name: Run tests
         run: make test

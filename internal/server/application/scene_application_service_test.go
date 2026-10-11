@@ -46,14 +46,14 @@ func ensureTestWidgetType(t *testing.T) {
 func newSceneService() application.SceneService {
 	repo := repositories.NewSceneRepositoryPostgres(testDB)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
-	return application.NewSceneService(repo, wtRepo)
+	return application.NewSceneService(repo, wtRepo, repositories.NewTagRepositoryPostgres(testDB))
 }
 
 func newSceneServiceWithBus(t *testing.T) (application.SceneService, eventbus.EventBus) {
 	bus, onCommit := deliveredOnCommit(t)
 	repo := repositories.NewSceneRepositoryPostgres(testDB, onCommit)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB, onCommit)
-	return application.NewSceneService(repo, wtRepo), bus
+	return application.NewSceneService(repo, wtRepo, repositories.NewTagRepositoryPostgres(testDB)), bus
 }
 
 var testCreateSceneInput = appdto.SceneInput{
@@ -841,7 +841,7 @@ func TestDeleteWidget_SceneChangedMeanwhile_RereadsAndKeepsChange(t *testing.T) 
 	}
 
 	repo := &racingSceneRepository{SceneRepository: repositories.NewSceneRepositoryPostgres(testDB), races: 1, race: renameScene(t, svc, sc.ID)}
-	racingSvc := application.NewSceneService(repo, repositories.NewWidgetTypeRepositoryPostgres(testDB))
+	racingSvc := application.NewSceneService(repo, repositories.NewWidgetTypeRepositoryPostgres(testDB), repositories.NewTagRepositoryPostgres(testDB))
 
 	deleted, err := racingSvc.DeleteWidgetByID(ctx, sc.ID, created.ID)
 
@@ -872,7 +872,7 @@ func TestDeleteWidget_LosesRaceThreeTimes_ReturnsConflictKeepsWidget(t *testing.
 	}
 
 	repo := &racingSceneRepository{SceneRepository: repositories.NewSceneRepositoryPostgres(testDB), races: 3, race: renameScene(t, svc, sc.ID)}
-	racingSvc := application.NewSceneService(repo, repositories.NewWidgetTypeRepositoryPostgres(testDB))
+	racingSvc := application.NewSceneService(repo, repositories.NewWidgetTypeRepositoryPostgres(testDB), repositories.NewTagRepositoryPostgres(testDB))
 
 	_, err = racingSvc.DeleteWidgetByID(ctx, sc.ID, created.ID)
 
@@ -887,7 +887,7 @@ func TestDeleteWidget_LosesRaceThreeTimes_ReturnsConflictKeepsWidget(t *testing.
 func TestDeleteScene_WidgetAddedMeanwhile_DeliversWidgetDeletedForIt(t *testing.T) {
 	cleanScenes(t)
 	bus, onCommit := deliveredOnCommit(t)
-	svc := application.NewSceneService(repositories.NewSceneRepositoryPostgres(testDB, onCommit), repositories.NewWidgetTypeRepositoryPostgres(testDB))
+	svc := application.NewSceneService(repositories.NewSceneRepositoryPostgres(testDB, onCommit), repositories.NewWidgetTypeRepositoryPostgres(testDB), repositories.NewTagRepositoryPostgres(testDB))
 	ctx := context.Background()
 	sc := mustCreateScene(t, svc)
 
@@ -898,7 +898,7 @@ func TestDeleteScene_WidgetAddedMeanwhile_DeliversWidgetDeletedForIt(t *testing.
 			t.Fatalf("concurrent CreateWidget: %v", err)
 		}
 	}}
-	racingSvc := application.NewSceneService(repo, repositories.NewWidgetTypeRepositoryPostgres(testDB))
+	racingSvc := application.NewSceneService(repo, repositories.NewWidgetTypeRepositoryPostgres(testDB), repositories.NewTagRepositoryPostgres(testDB))
 	var widgetDeleted []uuid.UUID
 	bus.Subscribe(event.EventTypeWidgetDeleted, func(e event.Event) {
 		widgetDeleted = append(widgetDeleted, e.(scene.WidgetEvent).WidgetID().UUID())
@@ -953,7 +953,7 @@ func newServiceDeletingRacingType(t *testing.T) application.SceneService {
 			t.Fatalf("concurrent delete of widget type: %v", err)
 		}
 	}
-	return application.NewSceneService(repositories.NewSceneRepositoryPostgres(testDB), wtRepo)
+	return application.NewSceneService(repositories.NewSceneRepositoryPostgres(testDB), wtRepo, repositories.NewTagRepositoryPostgres(testDB))
 }
 
 func TestCreateWidget_TypeDeletedMeanwhile_ReturnsInvalidInput(t *testing.T) {
