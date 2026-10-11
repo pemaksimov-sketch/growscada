@@ -197,8 +197,8 @@ async function api(resource, method = 'GET', body) {
       'editing the library draft changed the pinned Project snapshot');
     assert.ok((await api(`/widget-types/${type.id}`)).version > changedType.version);
     await page.getByText('Project', { exact: true }).click();
-    const reconciledBox = await page.locator(`#w-preview-${widget.id}`).boundingBox();
-    assert.ok(reconciledBox);
+    let reconciledBox;
+    await until(async () => !!(reconciledBox = await page.locator(`#w-preview-${widget.id}`).boundingBox()));
     const conflicts = [];
     page.on('response', response => { if (response.status() === 409) conflicts.push(response.url()); });
     await page.mouse.move(reconciledBox.x + 30, reconciledBox.y + 30);
