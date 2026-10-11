@@ -40,6 +40,9 @@ func serviceProblem(r *http.Request, err error) *ProblemDetails {
 		{scene.ErrWidgetNotFound, "Widget", r.PathValue("widgetId")},
 		{tag.ErrTagNotFound, "Tag", r.PathValue("id")},
 		{library.ErrWidgetTypeNotFound, "WidgetType", r.PathValue("id")},
+		{library.ErrLibraryNotFound, "Library", r.PathValue("library")},
+		{library.ErrReleaseNotFound, "LibraryRelease", r.PathValue("release")},
+		{library.ErrProjectPinNotFound, "ProjectLibraryPin", r.PathValue("library")},
 	} {
 		if errors.Is(err, item.cause) {
 			return NewNotFound(item.resource, item.id, r.URL.Path)
@@ -56,6 +59,8 @@ func serviceProblem(r *http.Request, err error) *ProblemDetails {
 		{tag.ErrTagNameTaken, "tag"},
 		{library.ErrWidgetTypeConflict, "widget type"},
 		{library.ErrWidgetTypeInUse, "widget type"},
+		{library.ErrLibraryConflict, "library"},
+		{library.ErrLibraryNameTaken, "library"},
 	} {
 		if errors.Is(err, item.cause) {
 			return NewConflict(item.resource, err.Error(), r.URL.Path)

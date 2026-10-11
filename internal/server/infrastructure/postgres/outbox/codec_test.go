@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
@@ -40,10 +42,12 @@ func sampleEvents(t *testing.T) []event.Event {
 	sceneID := id.NewID[scene.Scene]()
 	widgetID := id.NewID[scene.Widget]()
 	projectID := id.NewID[project.Project]()
+	libraryID := id.NewID[library.Library]()
 	return []event.Event{
 		project.NewEvent(event.EventTypeProjectCreated, projectID, ts),
 		project.NewEvent(event.EventTypeProjectUpdated, projectID, ts),
 		project.NewEvent(event.EventTypeProjectDeleted, projectID, ts),
+		project.NewEvent(event.EventTypeProjectLibraryPinsChanged, projectID, ts),
 		tag.NewTagCreatedEvent(tagID, ts),
 		tag.NewDefinitionUpdatedEvent(tagID, ts),
 		tag.NewTagUpdatedEvent(aTag, ts),
@@ -51,6 +55,9 @@ func sampleEvents(t *testing.T) []event.Event {
 		library.NewWidgetTypeCreatedEvent(wtID, ts),
 		library.NewWidgetTypeUpdatedEvent(wtID, ts),
 		library.NewWidgetTypeDeletedEvent(wtID, ts),
+		library.NewLibraryCreatedEvent(libraryID, ts),
+		library.NewLibraryUpdatedEvent(libraryID, ts),
+		library.NewLibraryReleasedEvent(libraryID, uuid.New(), 2, ts),
 		scene.NewSceneCreatedEvent(sceneID, ts),
 		scene.NewSceneUpdatedEvent(sceneID, ts),
 		scene.NewSceneDeletedEvent(sceneID, ts),
@@ -116,6 +123,15 @@ func assertSameSubject(t *testing.T, original, decoded event.Event) {
 	case library.WidgetTypeEvent:
 		if got := decoded.(library.WidgetTypeEvent); got.WidgetTypeID() != want.WidgetTypeID() {
 			t.Errorf("widget type ID %s, want %s", got.WidgetTypeID(), want.WidgetTypeID())
+		}
+	case library.LibraryEvent:
+		if got := decoded.(library.LibraryEvent); got.LibraryID() != want.LibraryID() {
+			t.Errorf("library ID %s, want %s", got.LibraryID(), want.LibraryID())
+		}
+	case library.LibraryReleasedEvent:
+		got := decoded.(library.LibraryReleasedEvent)
+		if got.LibraryID() != want.LibraryID() || got.ReleaseID() != want.ReleaseID() || got.Number() != want.Number() {
+			t.Errorf("release %s/%d for library %s, want %s/%d for %s", got.ReleaseID(), got.Number(), got.LibraryID(), want.ReleaseID(), want.Number(), want.LibraryID())
 		}
 	case scene.WidgetEvent:
 		got := decoded.(scene.WidgetEvent)

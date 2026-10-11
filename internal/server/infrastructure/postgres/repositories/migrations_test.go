@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/library"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/migrations"
+	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/pressly/goose/v3"
 )
 
@@ -50,7 +53,11 @@ func TestMigrationSplit_CopiesLegacyStateIntoSeparateRuntimeDatabase(t *testing.
 	}
 	const mainProjectID = "00000000-0000-4000-8000-000000000001"
 	tagID := uuid.New()
+	legacyWidgetTypeID := uuid.New()
 	if _, err := engineeringDB.ExecContext(ctx, `INSERT INTO tags(id,project_id,name,type,value,quality,version) VALUES($1,$2,'legacy.counter','integer','9007199254740993','good',7)`, tagID, mainProjectID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engineeringDB.ExecContext(ctx, `INSERT INTO engineering.widget_types(id,name,html_template,script,script_language,default_width,default_height,input_ports,version) VALUES($1,'legacy type','','','javascript',120,60,'[]'::jsonb,1)`, legacyWidgetTypeID); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrations.Apply(ctx, engineeringDB, runtimeDB); err != nil {
@@ -63,6 +70,38 @@ func TestMigrationSplit_CopiesLegacyStateIntoSeparateRuntimeDatabase(t *testing.
 	}
 	if name != "legacy.counter" || kind != "integer" || origin != "Project" || definitionVersion != 1 {
 		t.Fatalf("definition not preserved and normalized: %s %s %s v%d", name, kind, origin, definitionVersion)
+	}
+	var releaseID, libraryID uuid.UUID
+	var releaseNumber int
+	var releasedTypeID uuid.UUID
+	if err := engineeringDB.QueryRowContext(ctx, `SELECT r.id,r.library_id,r.number,(r.content->'widget_types'->0->>'id')::uuid FROM engineering.library_releases r WHERE r.number=1`).Scan(&releaseID, &libraryID, &releaseNumber, &releasedTypeID); err != nil {
+		t.Fatal(err)
+	}
+	if releaseNumber != 1 || libraryID != uuid.MustParse("00000000-0000-4000-8000-000000000003") || releasedTypeID != legacyWidgetTypeID {
+		t.Fatalf("seed library release does not snapshot the migrated type: release=%d library=%s type=%s", releaseNumber, libraryID, releasedTypeID)
+	}
+	pinnedTypes := repositories.NewProjectWidgetTypeRepository(engineeringDB, uuid.MustParse(mainProjectID))
+	visibleTypes, err := pinnedTypes.FindAll(ctx)
+	if err != nil || len(visibleTypes) != 1 || visibleTypes[0].ID().UUID() != legacyWidgetTypeID || visibleTypes[0].Name().String() != "legacy type" {
+		t.Fatalf("Main cannot read its pinned Library Release contents: %+v %v", visibleTypes, err)
+	}
+	var pinID uuid.UUID
+	if err := engineeringDB.QueryRowContext(ctx, `SELECT release_id FROM engineering.project_library_pins WHERE project_id=$1 AND library_id=$2`, mainProjectID, libraryID).Scan(&pinID); err != nil || pinID != releaseID {
+		t.Fatalf("Main is not pinned to initial Library Release: %s %v", pinID, err)
+	}
+	if _, err := engineeringDB.ExecContext(ctx, `UPDATE engineering.library_releases SET content='{}'::jsonb WHERE id=$1`, releaseID); err == nil {
+		t.Fatal("Library Release snapshot accepted an update")
+	}
+	draftTypes := repositories.NewWidgetTypeRepositoryPostgres(engineeringDB)
+	draftType, err := draftTypes.FindByID(ctx, id.NewID(id.IDWithUUID[library.WidgetType](legacyWidgetTypeID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := draftTypes.Delete(ctx, draftType.Delete()); err != nil {
+		t.Fatalf("delete from Library Draft: %v", err)
+	}
+	if pinned, err := pinnedTypes.FindByID(ctx, id.NewID(id.IDWithUUID[library.WidgetType](legacyWidgetTypeID))); err != nil || pinned.Name().String() != "legacy type" {
+		t.Fatalf("deleting a draft type damaged the pinned release: %+v %v", pinned, err)
 	}
 	var value, quality string
 	var sequence int64

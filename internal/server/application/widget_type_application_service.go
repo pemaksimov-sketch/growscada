@@ -179,10 +179,9 @@ func parseWidgetTypeDefinition(input appdto.WidgetTypeInput) (widgetTypeDefiniti
 	return def, nil
 }
 
-// DeleteWidgetTypeByID deletes a widget type no Widget uses; while Widgets
-// use it, the error wraps library.ErrWidgetTypeInUse. It expects no Version:
-// a widget type changed meanwhile is reread and deleted as it is now
-// (retryOnRace).
+// DeleteWidgetTypeByID deletes a WidgetType from its Library Draft. Projects
+// continue using the immutable definition in their pinned Release. It expects
+// no Version: a concurrent change is reread and deleted as it is now.
 func (s widgetTypeServiceImpl) DeleteWidgetTypeByID(ctx context.Context, rawID uuid.UUID) (appdto.WidgetType, error) {
 	widgetTypeID := id.NewID(id.IDWithUUID[library.WidgetType](rawID))
 

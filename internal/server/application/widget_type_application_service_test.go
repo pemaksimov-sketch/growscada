@@ -648,7 +648,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 	}
 }
 
-func TestDeleteWidgetType_UsedByWidget_ReturnsErrWidgetTypeInUse(t *testing.T) {
+func TestDeleteWidgetType_UsedByProjectWidget_RemovesDraftOnly(t *testing.T) {
 	cleanScenes(t)
 	cleanWidgetTypes(t)
 	wtSvc := newWidgetTypeService()
@@ -666,13 +666,15 @@ func TestDeleteWidgetType_UsedByWidget_ReturnsErrWidgetTypeInUse(t *testing.T) {
 		t.Fatalf("CreateWidget: %v", err)
 	}
 
-	_, err = wtSvc.DeleteWidgetTypeByID(ctx, created.ID)
-
-	if !errors.Is(err, library.ErrWidgetTypeInUse) {
-		t.Errorf("expected wrapped ErrWidgetTypeInUse, got: %v", err)
+	if _, err = wtSvc.DeleteWidgetTypeByID(ctx, created.ID); err != nil {
+		t.Fatalf("draft type delete should not remove a type from the project's pinned release: %v", err)
 	}
-	if _, err := wtSvc.FindWidgetTypeByID(ctx, created.ID); err != nil {
-		t.Errorf("widget type after refused delete: %v", err)
+	if _, err := wtSvc.FindWidgetTypeByID(ctx, created.ID); !errors.Is(err, library.ErrWidgetTypeNotFound) {
+		t.Errorf("draft widget type still exists after delete: %v", err)
+	}
+	widgets, err := sceneSvc.FindWidgetsBySceneID(ctx, sc.ID)
+	if err != nil || len(widgets) != 1 || widgets[0].TypeID != created.ID {
+		t.Errorf("project widget was affected by draft deletion: %+v %v", widgets, err)
 	}
 }
 

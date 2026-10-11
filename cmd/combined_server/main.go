@@ -13,8 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/kipitix/gracedown"
 	"github.com/kipitix/growscada/internal/server/application"
-	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/library"
 	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/migrations"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
@@ -151,43 +151,39 @@ func main() {
 	// API server
 	projectRepository := repositories.NewProjectRepositoryPostgres(sqlDB, project.DefaultOrganizationID(), notifyDispatcher)
 	projectService := application.NewProjectService(projectRepository, project.DefaultOrganizationID())
+	libraryRepository := repositories.NewLibraryRepositoryPostgres(sqlDB, project.DefaultOrganizationID(), notifyDispatcher)
 	mainRepositories := repositories.ForProject(sqlDB, project.MainID(), notifyDispatcher)
 	tagRepository := mainRepositories.Tags()
 	widgetTypeRepository := repositories.NewWidgetTypeRepositoryPostgres(sqlDB, notifyDispatcher)
+	libraryService := application.NewLibraryService(libraryRepository, project.DefaultOrganizationID(), func(rawID uuid.UUID) library.WidgetTypeRepository {
+		return repositories.NewWidgetTypeRepositoryPostgresInLibrary(sqlDB, rawID, notifyDispatcher)
+	})
 	sceneRepository := mainRepositories.Scenes()
-	bindingScopes := func(ctx context.Context) ([]application.WidgetBindingScope, error) {
-		projects, err := projectRepository.FindAll(ctx)
-		if err != nil {
-			return nil, err
-		}
-		result := make([]application.WidgetBindingScope, len(projects))
-		for i, p := range projects {
-			scope := repositories.ForProject(sqlDB, p.ID(), notifyDispatcher)
-			definitions := repositories.NewTagDefinitionRepository(sqlDB, p.ID(), notifyDispatcher)
-			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: application.NewDefinitionTagTypeLookup(definitions)}
-		}
-		return result, nil
-	}
-	reconciliation := application.NewProjectWidgetReconciliationPolicy(widgetTypeRepository, bindingScopes)
-	dispatcher.RegisterPolicy("reconcile-widget-bindings", event.EventTypeWidgetTypeUpdated, reconciliation.Handle)
 	go func() {
 		dispatcher.Run(dispatcherCtx)
 		close(dispatcherDone)
 	}()
 	// Create services
 	mainDefinitions := repositories.NewTagDefinitionRepository(sqlDB, project.MainID(), notifyDispatcher)
+	mainPinnedTypes := repositories.NewProjectWidgetTypeRepository(sqlDB, project.MainID().UUID())
 	processState := runtimestore.New(runtimeDB).WithLiveEvents(eventBus.Publish)
 	tagService := application.NewSplitTagService(mainDefinitions, processState, project.MainID().UUID())
-	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository, application.WithWidgetTypeDefinitions(mainDefinitions), application.WithWidgetTypeScopes(bindingScopes))
-	sceneService := application.NewSplitSceneService(sceneRepository, widgetTypeRepository, mainDefinitions)
+	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository, application.WithWidgetTypeDefinitions(mainDefinitions))
+	sceneService := application.NewSplitSceneService(sceneRepository, mainPinnedTypes, mainDefinitions)
 	// Create router
 	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients,
 		restapi.WithProjects(projectService, func(rawID uuid.UUID) restapi.ProjectServices {
 			scope := repositories.ForProject(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher)
-			tags, scenes := repositories.NewTagDefinitionRepository(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher), scope.Scenes()
-			splitTags := application.NewSplitTagService(tags, processState, rawID)
-			return restapi.ProjectServices{Tags: splitTags, Definitions: splitTags, Scenes: application.NewSplitSceneService(scenes, widgetTypeRepository, tags)}
-		}, processState.RemoveProject))
+			definitions, scenes := repositories.NewTagDefinitionRepository(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher), scope.Scenes()
+			tags := scope.Tags()
+			pinnedTypes := repositories.NewProjectWidgetTypeRepository(sqlDB, rawID)
+			splitTags := application.NewSplitTagService(definitions, processState, rawID)
+			return restapi.ProjectServices{Tags: splitTags, Definitions: splitTags, Scenes: application.NewSplitSceneService(scenes, pinnedTypes, definitions), WidgetTypes: application.NewWidgetTypeService(pinnedTypes, scenes, tags, application.WithWidgetTypeDefinitions(definitions))}
+		}, processState.RemoveProject),
+		restapi.WithLibraries(libraryService, func(libraryID uuid.UUID) application.WidgetTypeService {
+			repo := repositories.NewWidgetTypeRepositoryPostgresInLibrary(sqlDB, libraryID, notifyDispatcher)
+			return application.NewWidgetTypeService(repo, sceneRepository, tagRepository)
+		}))
 	// Register the event hub shutdown handler. The outbox is drained first,
 	// while SSE clients are still connected, so what is left in it reaches
 	// them; a change committed after the drain (the API server stops

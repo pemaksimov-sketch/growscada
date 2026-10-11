@@ -32,7 +32,9 @@ type payload struct {
 	// SceneID is the Scene holding the Widget of a Widget event.
 	SceneID *uuid.UUID `json:"scene_id,omitempty"`
 	// Tag is the new state of the Tag of a tag_updated event.
-	Tag *tagState `json:"tag,omitempty"`
+	Tag           *tagState `json:"tag,omitempty"`
+	ReleaseID     uuid.UUID `json:"release_id,omitempty"`
+	ReleaseNumber int       `json:"release_number,omitempty"`
 }
 
 type tagState struct {
@@ -62,6 +64,12 @@ func Encode(e event.Event) ([]byte, error) {
 		p.ID = ev.TagID().UUID()
 	case library.WidgetTypeEvent:
 		p.ID = ev.WidgetTypeID().UUID()
+	case library.LibraryEvent:
+		p.ID = ev.LibraryID().UUID()
+	case library.LibraryReleasedEvent:
+		p.ID = ev.LibraryID().UUID()
+		p.ReleaseID = ev.ReleaseID()
+		p.ReleaseNumber = ev.Number()
 	case scene.WidgetEvent:
 		p.ID = ev.WidgetID().UUID()
 		sceneID := ev.SceneID().UUID()
@@ -95,7 +103,7 @@ func decodeScoped(eventType event.EventType, data []byte, projectID string) (eve
 	widgetID := id.NewID(id.IDWithUUID[scene.Widget](p.ID))
 
 	switch eventType {
-	case event.EventTypeProjectCreated, event.EventTypeProjectUpdated, event.EventTypeProjectDeleted:
+	case event.EventTypeProjectCreated, event.EventTypeProjectUpdated, event.EventTypeProjectDeleted, event.EventTypeProjectLibraryPinsChanged:
 		return project.NewEvent(eventType, id.NewID(id.IDWithUUID[project.Project](p.ID)), opts...), nil
 	case event.EventTypeTagCreated:
 		return tag.NewTagCreatedEvent(tagID, opts...), nil
@@ -115,6 +123,10 @@ func decodeScoped(eventType event.EventType, data []byte, projectID string) (eve
 		return library.NewWidgetTypeUpdatedEvent(widgetTypeID, opts...), nil
 	case event.EventTypeWidgetTypeDeleted:
 		return library.NewWidgetTypeDeletedEvent(widgetTypeID, opts...), nil
+	case event.EventTypeLibraryCreated, event.EventTypeLibraryUpdated:
+		return library.NewLibraryEvent(eventType, id.NewID(id.IDWithUUID[library.Library](p.ID)), opts...), nil
+	case event.EventTypeLibraryReleased:
+		return library.NewLibraryReleasedEvent(id.NewID(id.IDWithUUID[library.Library](p.ID)), p.ReleaseID, p.ReleaseNumber, opts...), nil
 	case event.EventTypeSceneCreated:
 		return scene.NewSceneCreatedEvent(sceneID, opts...), nil
 	case event.EventTypeSceneUpdated:

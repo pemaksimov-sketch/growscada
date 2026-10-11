@@ -12,7 +12,12 @@ import (
 
 func (p *Project) loadWidgetTypes(ctx app.Context) {
 	uiutil.Load(p.tasks, &p.widgetTypesReloader, uiutil.LoadRequest[[]apiv0.WidgetTypeResponse]{
-		Call: p.client.ListWidgetTypes, Reload: func() { p.loadWidgetTypes(p.compoCtx) },
+		Call: func(ctx context.Context) ([]apiv0.WidgetTypeResponse, error) {
+			if api, ok := p.client.(apiclient.LibraryServer); ok {
+				return api.ListProjectWidgetTypes(ctx, p.projectID)
+			}
+			return p.client.ListWidgetTypes(ctx)
+		}, Reload: func() { p.loadWidgetTypes(p.compoCtx) },
 		Apply: func(items []apiv0.WidgetTypeResponse) { p.widgetTypes = items },
 	})
 }

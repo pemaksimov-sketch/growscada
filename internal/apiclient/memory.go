@@ -8,22 +8,133 @@ import (
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // Memory is a UI test adapter, not a substitute for server domain validation.
 // It implements resource identity, deletion and optimistic versions, and
 // copies snapshots so editing a response cannot mutate its stored state.
 type Memory struct {
-	mu      sync.Mutex
-	tags    memoryTable[apiv0.TagResponse]
-	scenes  memoryTable[apiv0.SceneResponse]
-	types   memoryTable[apiv0.WidgetTypeResponse]
-	widgets memoryTable[apiv0.WidgetResponse]
+	mu              sync.Mutex
+	tags            memoryTable[apiv0.TagResponse]
+	scenes          memoryTable[apiv0.SceneResponse]
+	types           memoryTable[apiv0.WidgetTypeResponse]
+	widgets         memoryTable[apiv0.WidgetResponse]
+	libraryReleases map[uuid.UUID][]apiv0.LibraryReleaseResponse
+	projectPins     map[uuid.UUID][]apiv0.ProjectLibraryPinResponse
 }
 
 var _ Server = (*Memory)(nil)
 
 func NewMemory() *Memory { return &Memory{} }
+
+var defaultMemoryLibraryID = uuid.MustParse("00000000-0000-4000-8000-000000000003")
+
+func (m *Memory) ListLibraries(ctx context.Context) ([]apiv0.LibraryResponse, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return []apiv0.LibraryResponse{{ID: defaultMemoryLibraryID, Name: "GrowSCADA", Public: true, Version: 1}}, nil
+}
+
+func (m *Memory) ListProjectLibraryPins(ctx context.Context, projectID uuid.UUID) ([]apiv0.ProjectLibraryPinResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return append([]apiv0.ProjectLibraryPinResponse(nil), m.projectPins[projectID]...), nil
+}
+func (m *Memory) ListProjectWidgetTypes(ctx context.Context, _ uuid.UUID) ([]apiv0.WidgetTypeResponse, error) {
+	return m.ListWidgetTypes(ctx)
+}
+func (m *Memory) PinProjectLibraryRelease(ctx context.Context, projectID uuid.UUID, input apiv0.PinLibraryReleaseRequest) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.projectPins == nil {
+		m.projectPins = map[uuid.UUID][]apiv0.ProjectLibraryPinResponse{}
+	}
+	var release *apiv0.LibraryReleaseResponse
+	for _, r := range m.libraryReleases[input.LibraryID] {
+		if r.ID == input.ReleaseID {
+			copy := r
+			release = &copy
+		}
+	}
+	if release == nil && input.LibraryID == defaultMemoryLibraryID {
+		release = &apiv0.LibraryReleaseResponse{ID: uuid.MustParse("00000000-0000-4000-8000-000000000004"), LibraryID: defaultMemoryLibraryID, Number: 1, CreatedAt: time.Now().UTC(), Content: json.RawMessage(`{"widget_types":[]}`)}
+	}
+	if release == nil {
+		return memoryStatus(404, "Library release not found")
+	}
+	pin := apiv0.ProjectLibraryPinResponse{LibraryID: input.LibraryID, Release: *release}
+	pins := m.projectPins[projectID]
+	for i, p := range pins {
+		if p.LibraryID == input.LibraryID {
+			pins[i] = pin
+			m.projectPins[projectID] = pins
+			return nil
+		}
+	}
+	m.projectPins[projectID] = append(pins, pin)
+	return nil
+}
+func (m *Memory) UnpinProjectLibrary(ctx context.Context, projectID, libraryID uuid.UUID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	pins := m.projectPins[projectID]
+	for i, p := range pins {
+		if p.LibraryID == libraryID {
+			m.projectPins[projectID] = append(pins[:i], pins[i+1:]...)
+			return nil
+		}
+	}
+	return memoryStatus(404, "Project library pin not found")
+}
+func (m *Memory) ListLibraryReleases(ctx context.Context, libraryID uuid.UUID) ([]apiv0.LibraryReleaseResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return append([]apiv0.LibraryReleaseResponse(nil), m.libraryReleases[libraryID]...), nil
+}
+func (m *Memory) PublishLibrary(ctx context.Context, libraryID uuid.UUID) (apiv0.CreateLibraryReleaseResponse, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return apiv0.CreateLibraryReleaseResponse{}, err
+	}
+	if libraryID != defaultMemoryLibraryID {
+		return apiv0.CreateLibraryReleaseResponse{}, memoryStatus(404, "Library not found")
+	}
+	number := len(m.libraryReleases[libraryID]) + 2
+	id := uuid.New()
+	snapshot, err := json.Marshal(map[string]any{"widget_types": m.types.list()})
+	if err != nil {
+		return apiv0.CreateLibraryReleaseResponse{}, err
+	}
+	m.libraryReleases[libraryID] = append(m.libraryReleases[libraryID], apiv0.LibraryReleaseResponse{ID: id, LibraryID: libraryID, Number: number, CreatedAt: time.Now().UTC(), Content: snapshot})
+	return apiv0.CreateLibraryReleaseResponse{ID: id, Number: number}, nil
+}
+func (m *Memory) ListLibraryWidgetTypes(ctx context.Context, _ uuid.UUID) ([]apiv0.WidgetTypeResponse, error) {
+	return m.ListWidgetTypes(ctx)
+}
+func (m *Memory) CreateLibraryWidgetType(ctx context.Context, _ uuid.UUID, r apiv0.CreateWidgetTypeRequest) (apiv0.CreateWidgetTypeResponse, error) {
+	return m.CreateWidgetType(ctx, r)
+}
+func (m *Memory) UpdateLibraryWidgetType(ctx context.Context, _ uuid.UUID, id uuid.UUID, r apiv0.UpdateWidgetTypeRequest) (apiv0.UpdateWidgetTypeResponse, error) {
+	return m.UpdateWidgetType(ctx, id, r)
+}
+func (m *Memory) DeleteLibraryWidgetType(ctx context.Context, _ uuid.UUID, id uuid.UUID) (apiv0.WidgetTypeResponse, error) {
+	return m.DeleteWidgetType(ctx, id)
+}
 
 type memoryTable[T any] struct {
 	values map[uuid.UUID]T

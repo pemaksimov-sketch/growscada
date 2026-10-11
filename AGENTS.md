@@ -117,7 +117,7 @@ Services (`TagService`, `WidgetTypeService`, `SceneService`) accept repository i
 - CORS middleware applied globally.
 - Errors follow RFC 7807 Problem Details (`problems.go`).
 - Each resource has its own handler file (`tags.go`, `widgets.go`, etc.). JSON shapes are `contract/api/v0`; the conversions to/from `appdto` are in `dto_mapping.go`.
-- Project catalog CRUD lives under `/projects`; Tags, Scenes, Widgets and SSE are scoped under `/projects/{project}`. Legacy resource routes address Main. The organization-wide Library remains shared until Library Release pinning (task 33). The UI project picker reloads the page to discard the previous project's mounted components and asynchronous requests.
+- Project catalog CRUD lives under `/projects`; Tags, Scenes, Widgets and SSE are scoped under `/projects/{project}`. Legacy resource routes address Main. Libraries are organization-owned and versioned by immutable Releases; each project pins one Release per Library. The UI project picker reloads the page to discard the previous project's mounted components and asynchronous requests.
 - Request bodies are decoded strictly with `decodeRequest` (unknown field → 400); clients read responses tolerantly.
 
 **EventBus** (`internal/server/interface/eventbus/`): in-process bus feeding the SSE stream (`GET /api/v0/events`): domain events handed over by the outbox dispatcher, plus delivery's own events (`client_connected`/`client_disconnected`, `system_ready`). `event_bus_mqtt.go` is a stub.

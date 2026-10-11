@@ -13,7 +13,7 @@ get {
 tests {
   test("deleted_project_resources: status and schema header", function () {
     expect(res.getStatus()).to.equal(404);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
   });
   test("deleted_project_resources: response", function () {
     const body = res.getBody();

@@ -36,6 +36,8 @@ func ReloadTargetsFor(eventType string) ReloadTargets {
 		return ReloadTargets{Projects: true}
 	case apiv0.EventWidgetTypeCreated, apiv0.EventWidgetTypeUpdated, apiv0.EventWidgetTypeDeleted:
 		return ReloadTargets{WidgetTypes: true}
+	case apiv0.EventProjectLibraryPinsChanged:
+		return ReloadTargets{WidgetTypes: true}
 	case apiv0.EventSceneCreated, apiv0.EventSceneUpdated, apiv0.EventSceneDeleted:
 		return ReloadTargets{Scenes: true}
 	case apiv0.EventWidgetCreated, apiv0.EventWidgetUpdated, apiv0.EventWidgetDeleted:

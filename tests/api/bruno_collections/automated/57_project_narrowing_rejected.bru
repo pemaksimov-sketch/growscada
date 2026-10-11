@@ -36,7 +36,7 @@ body:json {
 tests {
   test("project_narrowing_rejected: status and schema header", function () {
     expect(res.getStatus()).to.equal(400);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
   });
   test("project_narrowing_rejected: response", function () {
     const body = res.getBody();

@@ -1,6 +1,7 @@
 package restapi
 
 import (
+	"errors"
 	"net/http"
 
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
@@ -18,6 +19,10 @@ func NewWidgetTypesHandler(s application.WidgetTypeService) *WidgetTypesHandlers
 
 // GetWidgetTypes handles GET /widget-types
 func (h WidgetTypesHandlers) GetWidgetTypes(w http.ResponseWriter, r *http.Request) {
+	if h.service == nil {
+		sendInternalError(w, r, errors.New("widget type service unavailable"))
+		return
+	}
 	list, err := h.service.FindAllWidgetTypes(r.Context())
 	if err != nil {
 		sendServiceError(w, r, err)

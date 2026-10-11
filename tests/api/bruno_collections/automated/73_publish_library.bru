@@ -1,0 +1,19 @@
+meta {
+  name: publish_library
+  type: http
+  seq: 73
+}
+
+post {
+  url: {{baseURL}}/api/v0/libraries/{{testLibraryID}}/releases
+  body: none
+  auth: none
+}
+
+tests {
+  test("publish_library: immutable snapshot created", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().number).to.equal(1);
+    bru.setVar("testLibraryReleaseID", res.getBody().id);
+  });
+}

@@ -13,7 +13,12 @@ import (
 
 func (o *Operation) loadWidgetTypes(ctx app.Context) {
 	uiutil.Load(o.tasks, &o.widgetTypesReloader, uiutil.LoadRequest[[]apiv0.WidgetTypeResponse]{
-		Call: o.client.ListWidgetTypes, Reload: func() { o.loadWidgetTypes(o.compoCtx) },
+		Call: func(ctx context.Context) ([]apiv0.WidgetTypeResponse, error) {
+			if api, ok := o.client.(apiclient.LibraryServer); ok {
+				return api.ListProjectWidgetTypes(ctx, o.projectID)
+			}
+			return o.client.ListWidgetTypes(ctx)
+		}, Reload: func() { o.loadWidgetTypes(o.compoCtx) },
 		Apply: func(items []apiv0.WidgetTypeResponse) {
 			byID := make(map[string]livescene.WidgetType, len(items))
 			for _, wt := range items {

@@ -1,0 +1,31 @@
+meta {
+  name: create_library
+  type: http
+  seq: 70
+}
+
+post {
+  url: {{baseURL}}/api/v0/libraries
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI Published Library",
+    "public": true
+  }
+}
+
+tests {
+  test("create_library: response", function () {
+    expect(res.getStatus()).to.equal(201);
+    const library = res.getBody();
+    expect(library.public).to.equal(true);
+    bru.setVar("testLibraryID", library.id);
+  });
+}

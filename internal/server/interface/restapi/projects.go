@@ -15,6 +15,7 @@ type ProjectServices struct {
 	Tags        application.TagService
 	Definitions application.TagDefinitionService
 	Scenes      application.SceneService
+	WidgetTypes application.WidgetTypeService
 }
 type RouterOption func(*APIRouter)
 
@@ -129,6 +130,7 @@ func WithProjects(projects application.ProjectService, services func(uuid.UUID) 
 			{"PUT /scenes/{sceneId}/widgets/{widgetId}", func(s ProjectServices) http.HandlerFunc { return NewWidgetsHandler(s.Scenes).PutWidgetsByID }},
 			{"DELETE /scenes/{sceneId}/widgets/{widgetId}", func(s ProjectServices) http.HandlerFunc { return NewWidgetsHandler(s.Scenes).DeleteWidgetsByID }},
 			{"GET /events", func(ProjectServices) http.HandlerFunc { return router.eventsHandlers.GetEvents }},
+			{"GET /widget-types", func(s ProjectServices) http.HandlerFunc { return NewWidgetTypesHandler(s.WidgetTypes).GetWidgetTypes }},
 		} {
 			// Patterns are trusted literals, split at the method separator.
 			for i, char := range route.pattern {

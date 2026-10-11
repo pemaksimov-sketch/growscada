@@ -1,0 +1,22 @@
+meta {
+  name: list_libraries
+  type: http
+  seq: 68
+}
+
+get {
+  url: {{baseURL}}/api/v0/libraries
+  body: none
+  auth: none
+}
+
+tests {
+  test("list_libraries: default public library exists", function () {
+    expect(res.getStatus()).to.equal(200);
+    const body = res.getBody();
+    const library = body.libraries.find(item => item.name === "GrowSCADA");
+    expect(library).to.exist;
+    expect(library.public).to.equal(true);
+    bru.setVar("defaultLibraryID", library.id);
+  });
+}

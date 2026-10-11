@@ -12,12 +12,12 @@ delete {
 
 tests {
   test("delete_used_type: status and schema header", function () {
-    expect(res.getStatus()).to.equal(409);
+    expect(res.getStatus()).to.equal(200);
     expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
   });
   test("delete_used_type: response", function () {
     const body = res.getBody();
-    expect(body.status).to.equal(409); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+    expect(body.id).to.equal(bru.getVar("typeID"));
 
   });
 }

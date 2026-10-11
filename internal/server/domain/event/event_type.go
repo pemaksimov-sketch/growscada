@@ -18,25 +18,29 @@ var _ fmt.Stringer = EventType{}
 // may receive is defined once.
 // A new value must also be added to eventTypeNames.
 var (
-	EventTypeSystemReady          = EventType{eventType: 1}
-	EventTypeTagCreated           = EventType{eventType: 2}
-	EventTypeTagUpdated           = EventType{eventType: 3}
-	EventTypeTagDeleted           = EventType{eventType: 4}
-	EventTypeWidgetTypeCreated    = EventType{eventType: 5}
-	EventTypeWidgetTypeUpdated    = EventType{eventType: 6}
-	EventTypeWidgetTypeDeleted    = EventType{eventType: 7}
-	EventTypeWidgetCreated        = EventType{eventType: 8}
-	EventTypeWidgetUpdated        = EventType{eventType: 9}
-	EventTypeWidgetDeleted        = EventType{eventType: 10}
-	EventTypeSceneCreated         = EventType{eventType: 11}
-	EventTypeSceneUpdated         = EventType{eventType: 12}
-	EventTypeSceneDeleted         = EventType{eventType: 13}
-	EventTypeClientConnected      = EventType{eventType: 14}
-	EventTypeClientDisconnected   = EventType{eventType: 15}
-	EventTypeProjectCreated       = EventType{eventType: 16}
-	EventTypeProjectUpdated       = EventType{eventType: 17}
-	EventTypeProjectDeleted       = EventType{eventType: 18}
-	EventTypeTagDefinitionUpdated = EventType{eventType: 19}
+	EventTypeSystemReady               = EventType{eventType: 1}
+	EventTypeTagCreated                = EventType{eventType: 2}
+	EventTypeTagUpdated                = EventType{eventType: 3}
+	EventTypeTagDeleted                = EventType{eventType: 4}
+	EventTypeWidgetTypeCreated         = EventType{eventType: 5}
+	EventTypeWidgetTypeUpdated         = EventType{eventType: 6}
+	EventTypeWidgetTypeDeleted         = EventType{eventType: 7}
+	EventTypeWidgetCreated             = EventType{eventType: 8}
+	EventTypeWidgetUpdated             = EventType{eventType: 9}
+	EventTypeWidgetDeleted             = EventType{eventType: 10}
+	EventTypeSceneCreated              = EventType{eventType: 11}
+	EventTypeSceneUpdated              = EventType{eventType: 12}
+	EventTypeSceneDeleted              = EventType{eventType: 13}
+	EventTypeClientConnected           = EventType{eventType: 14}
+	EventTypeClientDisconnected        = EventType{eventType: 15}
+	EventTypeProjectCreated            = EventType{eventType: 16}
+	EventTypeProjectUpdated            = EventType{eventType: 17}
+	EventTypeProjectDeleted            = EventType{eventType: 18}
+	EventTypeTagDefinitionUpdated      = EventType{eventType: 19}
+	EventTypeLibraryCreated            = EventType{eventType: 20}
+	EventTypeLibraryUpdated            = EventType{eventType: 21}
+	EventTypeLibraryReleased           = EventType{eventType: 22}
+	EventTypeProjectLibraryPinsChanged = EventType{eventType: 23}
 )
 
 // eventTypeNames is the single source of truth for known event types:
@@ -65,6 +69,10 @@ var eventTypeNames = []struct {
 	{EventTypeProjectUpdated, "project_updated"},
 	{EventTypeProjectDeleted, "project_deleted"},
 	{EventTypeTagDefinitionUpdated, "tag_definition_updated"},
+	{EventTypeLibraryCreated, "library_created"},
+	{EventTypeLibraryUpdated, "library_updated"},
+	{EventTypeLibraryReleased, "library_released"},
+	{EventTypeProjectLibraryPinsChanged, "project_library_pins_changed"},
 }
 
 // AllEventTypes returns every known EventType.

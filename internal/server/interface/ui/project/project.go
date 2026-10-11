@@ -19,8 +19,9 @@ import (
 type projectSubTab string
 
 const (
-	subTabScenes projectSubTab = "scenes"
-	subTabTags   projectSubTab = "tags"
+	subTabScenes    projectSubTab = "scenes"
+	subTabTags      projectSubTab = "tags"
+	subTabLibraries projectSubTab = "libraries"
 )
 
 type Project struct {
@@ -39,10 +40,15 @@ type Project struct {
 	activeSubTab projectSubTab
 	showGuides   bool
 
-	widgetTypes []widgetTypeItem
-	scenes      []sceneItem
-	widgets     []widgetItem
-	tags        []tagItem
+	widgetTypes       []widgetTypeItem
+	scenes            []sceneItem
+	widgets           []widgetItem
+	tags              []tagItem
+	libraries         []apiv0.LibraryResponse
+	libraryReleases   []apiv0.LibraryReleaseResponse
+	libraryPins       []apiv0.ProjectLibraryPinResponse
+	selectedLibraryID string
+	selectedReleaseID string
 
 	// Coalesce reloads of each server-backed list (see live_reload.go).
 	widgetTypesReloader uiutil.Reloader
@@ -196,6 +202,9 @@ func (p *Project) OnMount(ctx app.Context) {
 		p.loadWidgets(ctx) // load widgets for the restored scene immediately
 	}
 	p.loadTags(ctx)
+	if p.activeSubTab == subTabLibraries {
+		p.loadProjectLibraries(ctx)
+	}
 
 	p.handleServerEvents(ctx)
 }
@@ -273,8 +282,8 @@ func (p *Project) Render() app.UI {
 			p.renderSubTabs(),
 			app.If(p.activeSubTab == subTabScenes, func() app.UI {
 				return p.renderScenesContent()
-			}).Else(func() app.UI {
-				return p.renderTagsPanel()
+			}).ElseIf(p.activeSubTab == subTabTags, func() app.UI { return p.renderTagsPanel() }).Else(func() app.UI {
+				return p.renderLibrariesPanel()
 			}),
 		)
 }
@@ -289,6 +298,7 @@ func (p *Project) renderSubTabs() app.UI {
 		Body(
 			p.subTab("Scenes", subTabScenes),
 			p.subTab("Tags", subTabTags),
+			p.subTab("Libraries", subTabLibraries),
 			app.Div().Style("flex", "1"),
 			app.If(p.activeSubTab == subTabScenes, func() app.UI {
 				return app.Label().Style("display", "flex").Style("align-items", "center").Style("gap", "4px").Style("font-size", "12px").Body(
@@ -314,6 +324,9 @@ func (p *Project) subTab(label string, tab projectSubTab) app.UI {
 		OnClick(func(ctx app.Context, e app.Event) {
 			p.activeSubTab = tab
 			p.tasks.Store("project:subTab", string(tab))
+			if tab == subTabLibraries {
+				p.loadProjectLibraries(ctx)
+			}
 		})
 	if active {
 		return el.

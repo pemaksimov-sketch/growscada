@@ -1,12 +1,26 @@
 package library
 
 import (
+	"strconv"
+
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 )
 
 // ── List column ───────────────────────────────────────────────────────────────
 
 func (l *Library) renderListColumn() app.UI {
+	options := make([]app.UI, 0, len(l.libraries))
+	selectedName := "Library"
+	for _, item := range l.libraries {
+		options = append(options, app.Option().Value(item.ID.String()).Selected(item.ID.String() == l.selectedLibraryID).Text(item.Name))
+		if item.ID.String() == l.selectedLibraryID {
+			selectedName = item.Name
+		}
+	}
+	releaseOptions := make([]app.UI, 0, len(l.releases))
+	for _, release := range l.releases {
+		releaseOptions = append(releaseOptions, app.Option().Value(release.ID.String()).Text("Release "+strconv.Itoa(release.Number)+" · "+release.CreatedAt.Format("2006-01-02")))
+	}
 	return app.Div().
 		Style("display", "flex").
 		Style("flex-direction", "column").
@@ -14,7 +28,20 @@ func (l *Library) renderListColumn() app.UI {
 		Style("flex-shrink", "0").
 		Style("min-height", "0").
 		Body(
-			app.H3().Style("margin", "0 0 8px 0").Text("Widget Types"),
+			app.H3().Style("margin", "0 0 8px 0").Text(selectedName),
+			app.Select().ID("library-picker").Style("width", "100%").Style("margin-bottom", "6px").Body(options...).OnChange(func(ctx app.Context, e app.Event) {
+				l.selectedLibraryID = ctx.JSSrc().Get("value").String()
+				l.tasks.Store("library:selectedLibraryID", l.selectedLibraryID)
+				l.clearSelection()
+				l.tasks.Store("library:selectedID", "")
+				l.loadList(ctx)
+				l.loadReleases(ctx)
+			}),
+			app.Div().Style("display", "flex").Style("gap", "4px").Style("margin-bottom", "6px").Body(
+				app.Button().Style("flex", "1").Text("Publish release").OnClick(func(ctx app.Context, e app.Event) { l.publishRelease(ctx) }),
+			),
+			app.Select().ID("library-release-history").Style("width", "100%").Style("margin-bottom", "6px").Body(releaseOptions...),
+			app.H4().Style("margin", "0 0 6px 0").Text("Widget Types"),
 			l.renderListButtons(),
 			app.Div().
 				Style("flex", "1").

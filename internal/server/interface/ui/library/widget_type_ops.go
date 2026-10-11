@@ -14,7 +14,7 @@ const defaultScript = "function update() {\n}"
 func (l *Library) createItem(ctx app.Context) {
 	input := apiv0.CreateWidgetTypeRequest{Name: "New Widget Type", HtmlTemplate: defaultHTML, Script: defaultScript, ScriptLanguage: "javascript", DefaultWidth: 120, DefaultHeight: 60, InputPorts: []apiv0.InputPort{}}
 	uiutil.Request(l.tasks, func(ctx context.Context) (apiv0.CreateWidgetTypeResponse, error) {
-		return l.client.CreateWidgetType(ctx, input)
+		return l.createWidgetType(ctx, input)
 	}, func(result apiv0.CreateWidgetTypeResponse) {
 		l.selectedID = result.ID.String()
 		l.tasks.Store("library:selectedID", l.selectedID)
@@ -37,7 +37,7 @@ func (l *Library) deleteItem(ctx app.Context) {
 		if err != nil {
 			return apiv0.WidgetTypeResponse{}, err
 		}
-		return l.client.DeleteWidgetType(ctx, id)
+		return l.deleteWidgetType(ctx, id)
 	}, func(apiv0.WidgetTypeResponse) {
 		if l.selectedID == deletedID {
 			l.clearSelection()
@@ -55,7 +55,7 @@ func updateInput(item widgetTypeItem) apiv0.UpdateWidgetTypeRequest {
 }
 func (l *Library) updateItem(id uuid.UUID, input apiv0.UpdateWidgetTypeRequest) {
 	uiutil.Request(l.tasks, func(ctx context.Context) (apiv0.UpdateWidgetTypeResponse, error) {
-		return l.client.UpdateWidgetType(ctx, id, input)
+		return l.updateWidgetType(ctx, id, input)
 	}, func(result apiv0.UpdateWidgetTypeResponse) {
 		for i := range l.widgetTypes {
 			if l.widgetTypes[i].ID == id && l.widgetTypes[i].Version < result.Version {

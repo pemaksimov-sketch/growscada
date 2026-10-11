@@ -14,16 +14,21 @@ import (
 )
 
 type widgetTypeRepositoryPostgresImpl struct {
-	db    *sql.DB
-	store aggregateStore[library.WidgetType]
+	db        *sql.DB
+	libraryID uuid.UUID
+	store     aggregateStore[library.WidgetType]
 }
 
 var _ library.WidgetTypeRepository = (*widgetTypeRepositoryPostgresImpl)(nil)
 
 func NewWidgetTypeRepositoryPostgres(aDb *sql.DB, opts ...Option) library.WidgetTypeRepository {
+	return NewWidgetTypeRepositoryPostgresInLibrary(aDb, library.DefaultLibraryID(), opts...)
+}
+
+func NewWidgetTypeRepositoryPostgresInLibrary(aDb *sql.DB, libraryID uuid.UUID, opts ...Option) library.WidgetTypeRepository {
 	o := newOptions(opts)
 	return &widgetTypeRepositoryPostgresImpl{
-		db: aDb,
+		db: aDb, libraryID: libraryID,
 		store: aggregateStore[library.WidgetType]{
 			db: aDb, table: tableNameWidgetTypes,
 			notFound: library.ErrWidgetTypeNotFound, conflict: library.ErrWidgetTypeConflict,
@@ -46,33 +51,45 @@ func (r widgetTypeRepositoryPostgresImpl) Save(ctx context.Context, wt library.W
 	var saved library.WidgetType
 	_, err = r.store.save(ctx, wt.ID(), wt.Version(), wt.PendingEvents(), rowWrite[library.WidgetType]{
 		insert: func(tx *sql.Tx, next version.Version[library.WidgetType]) error {
-			row := tx.QueryRowContext(ctx,
-				`INSERT INTO widget_types (id, name, html_template, script, script_language, default_width, default_height, input_ports, version)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-				RETURNING `+selectWidgetTypeColumns,
+			query := `INSERT INTO widget_types (id, name, html_template, script, script_language, default_width, default_height, input_ports, version)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING ` + selectWidgetTypeColumns
+			args := []any{
 				wt.ID().UUID(), wt.Name().String(), wt.HtmlTemplate().String(),
 				wt.Script().String(), wt.ScriptLanguage().String(),
 				wt.DefaultSize().Width(), wt.DefaultSize().Height(),
 				portsJSON, next.Number(),
-			)
+			}
+			if r.libraryID != library.DefaultLibraryID() {
+				query = `INSERT INTO widget_types (id, library_id, name, html_template, script, script_language, default_width, default_height, input_ports, version)
+					VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING ` + selectWidgetTypeColumns
+				args = append([]any{wt.ID().UUID(), r.libraryID}, args[1:]...)
+			}
+			row := tx.QueryRowContext(ctx, query, args...)
 			if saved, err = r.scanWidgetType(row.Scan); err != nil {
 				return fmt.Errorf("cannot insert new widget type: %w", err)
 			}
 			return nil
 		},
 		update: func(tx *sql.Tx, current, next version.Version[library.WidgetType]) (bool, error) {
-			row := tx.QueryRowContext(ctx,
-				`UPDATE widget_types
+			query := `UPDATE widget_types
 				 SET name = $1, html_template = $2, script = $3, script_language = $4,
 				     default_width = $5, default_height = $6, input_ports = $7, version = $8
-				 WHERE id = $9 AND version = $10
-				 RETURNING `+selectWidgetTypeColumns,
+				 WHERE id = $9 AND version = $10`
+			args := []any{
 				wt.Name().String(), wt.HtmlTemplate().String(), wt.Script().String(),
 				wt.ScriptLanguage().String(),
 				wt.DefaultSize().Width(), wt.DefaultSize().Height(),
 				portsJSON, next.Number(),
 				wt.ID().UUID(), current.Number(),
-			)
+			}
+			if r.libraryID == library.DefaultLibraryID() {
+				query += ` AND COALESCE((to_jsonb(widget_types)->>'library_id')::uuid, $11) = $11`
+				args = append(args, r.libraryID)
+			} else {
+				query += ` AND library_id = $11`
+				args = append(args, r.libraryID)
+			}
+			row := tx.QueryRowContext(ctx, query+` RETURNING `+selectWidgetTypeColumns, args...)
 			saved, err = r.scanWidgetType(row.Scan)
 			if errors.Is(err, sql.ErrNoRows) {
 				return false, nil
@@ -90,6 +107,17 @@ func (r widgetTypeRepositoryPostgresImpl) Save(ctx context.Context, wt library.W
 }
 
 func (r widgetTypeRepositoryPostgresImpl) Delete(ctx context.Context, wt library.WidgetType) error {
+	var exists bool
+	query := `SELECT EXISTS(SELECT 1 FROM widget_types WHERE id=$1 AND COALESCE((to_jsonb(widget_types)->>'library_id')::uuid,$2)=$2)`
+	if r.libraryID != library.DefaultLibraryID() {
+		query = `SELECT EXISTS(SELECT 1 FROM widget_types WHERE id=$1 AND library_id=$2)`
+	}
+	if err := r.db.QueryRowContext(ctx, query, wt.ID().UUID(), r.libraryID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return library.ErrWidgetTypeNotFound
+	}
 	err := r.store.delete(ctx, wt.ID(), wt.Version(), wt.PendingEvents())
 	if isForeignKeyViolation(err, constraintWidgetsTypeID) {
 		return library.ErrWidgetTypeInUse
@@ -100,10 +128,12 @@ func (r widgetTypeRepositoryPostgresImpl) Delete(ctx context.Context, wt library
 const selectWidgetTypeColumns = `id, name, html_template, script, script_language, default_width, default_height, input_ports, version`
 
 func (r widgetTypeRepositoryPostgresImpl) FindByID(ctx context.Context, anID id.ID[library.WidgetType]) (library.WidgetType, error) {
-	row := r.db.QueryRowContext(ctx,
-		"SELECT "+selectWidgetTypeColumns+" FROM widget_types WHERE id = $1",
-		anID.UUID(),
-	)
+	query := "SELECT " + selectWidgetTypeColumns + " FROM widget_types WHERE id=$1 AND COALESCE((to_jsonb(widget_types)->>'library_id')::uuid,$2)=$2"
+	args := []any{anID.UUID(), r.libraryID}
+	if r.libraryID != library.DefaultLibraryID() {
+		query = "SELECT " + selectWidgetTypeColumns + " FROM widget_types WHERE id=$1 AND library_id=$2"
+	}
+	row := r.db.QueryRowContext(ctx, query, args...)
 	wt, err := r.scanWidgetType(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -115,9 +145,12 @@ func (r widgetTypeRepositoryPostgresImpl) FindByID(ctx context.Context, anID id.
 }
 
 func (r widgetTypeRepositoryPostgresImpl) FindAll(ctx context.Context) ([]library.WidgetType, error) {
-	rows, err := r.db.QueryContext(ctx,
-		"SELECT "+selectWidgetTypeColumns+" FROM widget_types ORDER BY pk_id",
-	)
+	query := "SELECT " + selectWidgetTypeColumns + " FROM widget_types WHERE COALESCE((to_jsonb(widget_types)->>'library_id')::uuid,$1)=$1 ORDER BY pk_id"
+	args := []any{r.libraryID}
+	if r.libraryID != library.DefaultLibraryID() {
+		query = "SELECT " + selectWidgetTypeColumns + " FROM widget_types WHERE library_id=$1 ORDER BY pk_id"
+	}
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("error querying widget types: %w", err)
 	}

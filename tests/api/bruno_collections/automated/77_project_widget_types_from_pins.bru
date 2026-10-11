@@ -1,0 +1,20 @@
+meta {
+  name: project_widget_types_from_pins
+  type: http
+  seq: 77
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{mainProject}}/widget-types
+  body: none
+  auth: none
+}
+
+tests {
+  test("project_widget_types_from_pins: only released types are exposed", function () {
+    expect(res.getStatus()).to.equal(200);
+    const type = res.getBody().widget_types.find(item => item.id === bru.getVar("libraryWidgetTypeID"));
+    expect(type).to.exist;
+    expect(type.name).to.equal("CI release gauge");
+  });
+}

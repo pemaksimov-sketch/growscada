@@ -175,6 +175,10 @@ func eventSourceID(e event.Event) string {
 		return ev.WidgetID().String()
 	case library.WidgetTypeEvent:
 		return ev.WidgetTypeID().String()
+	case library.LibraryEvent:
+		return ev.LibraryID().String()
+	case library.LibraryReleasedEvent:
+		return ev.LibraryID().String()
 	case scene.SceneEvent:
 		return ev.SceneID().String()
 	case eventbus.ClientEvent:
