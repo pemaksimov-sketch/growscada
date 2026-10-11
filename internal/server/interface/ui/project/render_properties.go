@@ -114,6 +114,7 @@ func (p *Project) renderSceneProperties() app.UI {
 		row2(
 			inputStyle(
 				app.Input().
+					ID("scene-name").
 					Type("text").
 					Value(p.editingScenePropsName).
 					Style("flex", "1").
@@ -178,6 +179,7 @@ func (p *Project) renderSceneProperties() app.UI {
 		Body(
 			sectionHeader("Background HTML"),
 			app.Textarea().
+				ID("scene-background").
 				Style("width", "100%").
 				Style("font-size", "11px").
 				Style("font-family", "monospace").

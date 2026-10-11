@@ -43,12 +43,13 @@ async function api(resource, method = 'GET', body) {
       background_html: '<div style="background:#1a1a2e;width:900px;height:600px">QA background</div>',
     });
     const tag = await api('/tags', 'POST', { name: 'qa.counter', type: 'integer', value: '9007199254740993', quality: 'good' });
-    const type = await api('/widget-types', 'POST', {
+    const createdType = await api('/widget-types', 'POST', {
       name: 'QA exact counter', html_template: '<div id="exact" style="color:white"></div>',
       script: "function render(inputs){document.querySelector('#exact').textContent=BigInt(inputs.n.raw).toString();}",
       script_language: 'javascript', default_width: 350, default_height: 80,
       input_ports: [{ name: 'n', description: 'Counter', type_hint: 'integer' }],
     });
+    const type = await api(`/widget-types/${createdType.id}`);
     const widget = await api(`/scenes/${scene.id}/widgets`, 'POST', {
       name: 'QA counter', position: { x: 100, y: 100, z: 0 }, size: { width: 350, height: 80 },
       origin: { x: 0, y: 0 }, rotation: { degrees: 0 }, type_id: type.id,
@@ -120,7 +121,8 @@ async function api(resource, method = 'GET', body) {
 
     // A change made by another client arrives through SSE without reloading.
     await page.getByText('Browser QA', { exact: true }).click();
-    const sceneName = page.locator('input[type="text"]').first();
+    const sceneName = page.locator('#scene-name');
+    await sceneName.waitFor({ state: 'visible' });
     await sceneName.fill('Unsaved scene name');
     const current = await api(`/scenes/${scene.id}`);
     await api(`/scenes/${scene.id}`, 'PUT', {
@@ -130,7 +132,7 @@ async function api(resource, method = 'GET', body) {
     await until(async () => (await background.getAttribute('srcdoc')).includes('Updated QA background'));
     assert.equal(await sceneName.inputValue(), 'Unsaved scene name', 'SSE erased an unsaved Project edit');
     await sceneName.fill(current.name);
-    const backgroundEditor = page.locator('textarea');
+    const backgroundEditor = page.locator('#scene-background');
     await backgroundEditor.fill('<div style="background:#16213e;width:900px;height:600px">Applied QA background</div>');
     await backgroundEditor.press('Tab');
     await until(async () => (await background.getAttribute('srcdoc')).includes('Applied QA background'));
