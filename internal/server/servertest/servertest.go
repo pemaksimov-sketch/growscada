@@ -20,6 +20,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/kipitix/growscada/internal/server/application"
+	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -107,10 +108,6 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 	dispatcher := outbox.NewDispatcher(db, bus.Publish)
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() {
-		dispatcher.Run(ctx)
-		close(done)
-	}()
 	t.Cleanup(func() {
 		stop()
 		<-done
@@ -121,6 +118,9 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(db, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(db, onCommit)
+	policy := application.NewWidgetReconciliationPolicy(wtRepo, sceneRepo)
+	dispatcher.RegisterPolicy("reconcile-widget-bindings", event.EventTypeWidgetTypeUpdated, policy.Handle)
+	go func() { dispatcher.Run(ctx); close(done) }()
 	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, tagRepo)
 	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, tagRepo)
 	router := restapi.NewRouter(tagSvc, wtSvc, sceneSvc, bus, 100)

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Reliable widget reconciliation (task 21): WidgetType saves no longer synchronously change Scenes. Each reliable policy has its own durable queue and worker; a failed or slow reconciliation retries after restart without blocking Operation SSE or other subscribers. Scene reconciliation remains idempotent and retries CAS races.
+
 - Live UI loading (task 29): Project applies versioned tag values directly from SSE instead of requesting all tags on every value update. Project, Library and Operation share coalesced list loading; editor merges and event routing are separated and tested.
 
 - Tag binding types (task 25): creating or editing a widget rejects missing tags and incompatible port types with 400. Narrowing a WidgetType port hint is rejected before saving when existing bindings are incompatible; widening to any type remains allowed.

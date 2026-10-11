@@ -12,6 +12,7 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/kipitix/gracedown"
 	"github.com/kipitix/growscada/internal/server/application"
+	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -92,10 +93,6 @@ func main() {
 	dispatcher := outbox.NewDispatcher(sqlDB, eventBus.Publish)
 	dispatcherCtx, stopDispatcher := context.WithCancel(context.Background())
 	dispatcherDone := make(chan struct{})
-	go func() {
-		dispatcher.Run(dispatcherCtx)
-		close(dispatcherDone)
-	}()
 	// stopOutbox stops the dispatcher and delivers what is left in the outbox
 	stopOutbox := func(ctx context.Context) {
 		stopDispatcher()
@@ -111,6 +108,12 @@ func main() {
 	tagRepository := repositories.NewTagRepositoryPostgres(sqlDB, notifyDispatcher)
 	widgetTypeRepository := repositories.NewWidgetTypeRepositoryPostgres(sqlDB, notifyDispatcher)
 	sceneRepository := repositories.NewSceneRepositoryPostgres(sqlDB, notifyDispatcher)
+	reconciliation := application.NewWidgetReconciliationPolicy(widgetTypeRepository, sceneRepository)
+	dispatcher.RegisterPolicy("reconcile-widget-bindings", event.EventTypeWidgetTypeUpdated, reconciliation.Handle)
+	go func() {
+		dispatcher.Run(dispatcherCtx)
+		close(dispatcherDone)
+	}()
 	// Create services
 	tagService := application.NewTagService(tagRepository)
 	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository)

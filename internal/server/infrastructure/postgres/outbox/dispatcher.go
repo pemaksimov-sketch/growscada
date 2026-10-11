@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -48,7 +49,8 @@ type Dispatcher struct {
 
 	// mu makes DrainOnce calls take turns, so no row is delivered twice by
 	// one process.
-	mu sync.Mutex
+	mu       sync.Mutex
+	policies []*policy
 }
 
 // DispatcherOption configures a Dispatcher.
@@ -87,6 +89,11 @@ func (d *Dispatcher) Notify() {
 // every poll interval, and soon again while rows wait for an older
 // transaction. An error is logged and retried on the next round.
 func (d *Dispatcher) Run(ctx context.Context) {
+	var workers sync.WaitGroup
+	for _, p := range d.policies {
+		workers.Go(func() { d.runPolicy(ctx, p) })
+	}
+	defer workers.Wait()
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
 	for {
@@ -114,8 +121,32 @@ func (d *Dispatcher) Run(ctx context.Context) {
 // it does not hold back the rest. Once ctx is done no further row is
 // delivered, but the delivered ones are still deleted.
 func (d *Dispatcher) DrainOnce(ctx context.Context) (int, error) {
-	delivered, _, err := d.drain(ctx)
-	return delivered, err
+	delivered := 0
+	for {
+		n, _, err := d.drain(ctx)
+		delivered += n
+		if err != nil {
+			return delivered, err
+		}
+		processed := 0
+		var policyErr error
+		for _, p := range d.policies {
+			n, err := d.drainPolicy(ctx, p)
+			processed += n
+			if err != nil {
+				policyErr = errors.Join(policyErr, fmt.Errorf("policy %s: %w", p.name, err))
+			}
+		}
+		// A successful prefix may itself have committed Scene events, even
+		// if a later Scene failed. Deliver those before returning the failure.
+		if policyErr != nil {
+			n, _, err := d.drain(ctx)
+			return delivered + n, errors.Join(policyErr, err)
+		}
+		if processed == 0 {
+			return delivered, nil
+		}
+	}
 }
 
 // drain is DrainOnce that also reports whether rows were left waiting for an
@@ -138,6 +169,9 @@ func (d *Dispatcher) drain(ctx context.Context) (delivered int, heldBack bool, e
 			if err != nil {
 				slog.Error("dropping undeliverable outbox row", "seq", row.seq, "type", row.eventType, "error", err)
 			} else {
+				if err := d.enqueuePolicies(ctx, row, e); err != nil {
+					return delivered, false, errors.Join(err, d.deleteRows(ctx, done))
+				}
 				d.deliver(e)
 				delivered++
 			}

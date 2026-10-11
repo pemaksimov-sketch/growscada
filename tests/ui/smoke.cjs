@@ -8,10 +8,12 @@ const root = path.resolve(__dirname, '../..');
 const output = path.join(root, 'artifacts/ui');
 fs.mkdirSync(output, { recursive: true });
 const log = fs.openSync(path.join(output, 'server.log'), 'w');
-const server = spawn('./growscada_combined_server', [], {
+function startServer() { return spawn('./growscada_combined_server', [], {
   cwd: path.join(root, 'bin/growscada_combined_server'), stdio: ['ignore', log, log],
-});
-const serverExit = new Promise(resolve => server.once('exit', (code, signal) => resolve({ code, signal })));
+}); }
+let server = startServer();
+const exited = child => new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
+let serverExit = exited(server);
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check, timeout = 30000) {
   const deadline = Date.now() + timeout;
@@ -117,12 +119,21 @@ async function api(resource, method = 'GET', body) {
     });
 
     // A change made by another client arrives through SSE without reloading.
+    await page.getByText('Browser QA', { exact: true }).click();
+    const sceneName = page.locator('input[type="text"]').first();
+    await sceneName.fill('Unsaved scene name');
     const current = await api(`/scenes/${scene.id}`);
     await api(`/scenes/${scene.id}`, 'PUT', {
       name: current.name, width: current.width, height: current.height, version: current.version,
       background_html: '<div style="background:#16213e;width:900px;height:600px">Updated QA background</div>',
     });
     await until(async () => (await background.getAttribute('srcdoc')).includes('Updated QA background'));
+    assert.equal(await sceneName.inputValue(), 'Unsaved scene name', 'SSE erased an unsaved Project edit');
+    await sceneName.fill(current.name);
+    const backgroundEditor = page.locator('textarea');
+    await backgroundEditor.fill('<div style="background:#16213e;width:900px;height:600px">Applied QA background</div>');
+    await backgroundEditor.press('Tab');
+    await until(async () => (await background.getAttribute('srcdoc')).includes('Applied QA background'));
     await page.getByText('Operation', { exact: true }).click();
     await background.waitFor({ state: 'visible' });
     await until(async () => {
@@ -132,6 +143,45 @@ async function api(resource, method = 'GET', body) {
       return false;
     });
     await page.screenshot({ path: path.join(output, 'operation.png') });
+
+    await page.getByText('Library', { exact: true }).click();
+    await page.getByText('QA exact counter', { exact: true }).click();
+    const libraryInput = page.locator('#input-data-n');
+    const libraryValue = page.frameLocator('#preview-iframe').locator('#exact');
+    for (const value of ['9007199254740991', '9007199254740993', '-9007199254740993', '9223372036854775807', '-9223372036854775808']) {
+      await libraryInput.fill(value);
+      await until(async () => await libraryValue.textContent() === value);
+    }
+    const draftHTML = type.html_template + '<span id="unsaved">Local draft</span>';
+    await page.locator('#html-template').fill(draftHTML);
+    const changedType = await api(`/widget-types/${type.id}`, 'PUT', {
+      name: 'QA remote rename', html_template: type.html_template, script: type.script,
+      script_language: type.script_language, default_width: type.default_width,
+      default_height: type.default_height, input_ports: type.input_ports, version: type.version,
+    });
+    await page.getByText('QA remote rename', { exact: true }).waitFor();
+    assert.equal(await page.locator('#html-template').inputValue(), draftHTML, 'SSE erased an unsaved Library edit');
+    assert.equal((await api(`/widget-types/${type.id}`)).html_template, type.html_template);
+    await page.screenshot({ path: path.join(output, 'library.png') });
+
+    // Remove a port through the actual Library editor. The policy must
+    // reconcile the saved binding before a subsequent Project drag.
+    await page.locator('#script-editor').fill("function render(inputs){document.querySelector('#exact').textContent=inputs.n?BigInt(inputs.n.raw).toString():'no input';}");
+    await page.getByRole('button', { name: '✕', exact: true }).click();
+    await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
+    await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).port_bindings.length === 0);
+    assert.ok((await api(`/widget-types/${type.id}`)).version > changedType.version);
+    await page.getByText('Project', { exact: true }).click();
+    const reconciledBox = await page.locator(`#w-preview-${widget.id}`).boundingBox();
+    assert.ok(reconciledBox);
+    const conflicts = [];
+    page.on('response', response => { if (response.status() === 409) conflicts.push(response.url()); });
+    await page.mouse.move(reconciledBox.x + 30, reconciledBox.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(reconciledBox.x + 50, reconciledBox.y + 50, { steps: 8 });
+    await page.mouse.up();
+    await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).position.x === 160);
+    assert.deepEqual(conflicts, [], 'Drag after reconciliation conflicted');
     assert.deepEqual(errors, [], 'Browser runtime errors');
 
     const stoppedAt = Date.now();
@@ -140,7 +190,20 @@ async function api(resource, method = 'GET', body) {
     assert.equal(outcome.code, 0, JSON.stringify(outcome));
     assert.ok(Date.now() - stoppedAt < 3000);
     await page.getByText(/No connection to the server/).first().waitFor({ timeout: 10000 });
-    console.log('PASS: background, live update, widget drag, exact Integer and SSE shutdown');
+    server = startServer();
+    serverExit = exited(server);
+    await until(async () => (await fetch('http://localhost:9090/api/v0/scenes')).ok);
+    await until(async () => !(await page.getByText(/No connection to the server/).count()), 15000);
+    const restartedScene = await api(`/scenes/${scene.id}`);
+    await api(`/scenes/${scene.id}`, 'PUT', {
+      name: restartedScene.name, width: restartedScene.width, height: restartedScene.height,
+      version: restartedScene.version, background_html: '<div>Live after restart</div>',
+    });
+    await until(async () => (await background.getAttribute('srcdoc')).includes('Live after restart'));
+    assert.deepEqual(errors, [], 'Browser runtime errors after reconnect');
+    server.kill('SIGTERM');
+    assert.equal((await serverExit).code, 0);
+    console.log('PASS: background, scoped SSE, draft preservation, exact Integer, reconciliation and restart');
   } catch (error) {
     if (page) await page.screenshot({ path: path.join(output, 'failure.png') }).catch(() => {});
     throw error;

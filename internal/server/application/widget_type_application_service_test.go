@@ -528,7 +528,7 @@ func TestUpdateWidgetType_RemovedPort_CleansBindingsOnAllWidgetsInSameScene(t *t
 	}
 
 	// Drop the "value" port from the type: both widgets' bindings to it are
-	// now orphaned and must be cleaned up by the same UpdateWidgetType call.
+	// now orphaned and must be cleaned up by the durable policy.
 	_, err = wtSvc.UpdateWidgetType(ctx, createdType.ID, createdType.Version, appdto.WidgetTypeInput{
 		Name:           createdType.Name,
 		HtmlTemplate:   createdType.HtmlTemplate,
@@ -542,6 +542,7 @@ func TestUpdateWidgetType_RemovedPort_CleansBindingsOnAllWidgetsInSameScene(t *t
 		t.Fatalf("UpdateWidgetType: %v", err)
 	}
 
+	drainReconciliation(t, nil)
 	w1, err := sceneSvc.FindWidgetByID(ctx, sc.ID, first.ID)
 	if err != nil {
 		t.Fatalf("FindWidgetByID 1: %v", err)
@@ -630,6 +631,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 	if err != nil {
 		t.Fatalf("UpdateWidgetType: %v", err)
 	}
+	drainReconciliation(t, sceneRepo)
 	found, err := sceneSvc.FindSceneByID(ctx, sc.ID)
 	if err != nil {
 		t.Fatalf("FindSceneByID: %v", err)
@@ -755,7 +757,12 @@ func TestUpdateWidgetType_RemovedPort_OutboxHoldsEventsOfEveryChangedScene(t *te
 		t.Fatalf("UpdateWidgetType: %v", err)
 	}
 
-	got := outboxSceneIDs(t)
+	got := map[string][]uuid.UUID{}
+	for _, e := range drainReconciliation(t, nil) {
+		if ev, ok := e.(scene.WidgetEvent); ok {
+			got[e.Type().String()] = append(got[e.Type().String()], ev.SceneID().UUID())
+		}
+	}
 	if !slices.Equal(got["widget_updated"], changedScenes) {
 		t.Errorf("widget_updated in the outbox for scenes %v, want each changed scene %v", got["widget_updated"], changedScenes)
 	}
