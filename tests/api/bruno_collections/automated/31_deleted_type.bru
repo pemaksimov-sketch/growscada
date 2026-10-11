@@ -1,0 +1,23 @@
+meta {
+  name: deleted_type
+  type: http
+  seq: 31
+}
+
+get {
+  url: {{baseURL}}/api/v0/widget-types/{{typeID}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("deleted_type: status and schema header", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("deleted_type: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(404); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+
+  });
+}

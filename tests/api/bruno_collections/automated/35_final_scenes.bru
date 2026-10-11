@@ -1,0 +1,23 @@
+meta {
+  name: final_scenes
+  type: http
+  seq: 35
+}
+
+get {
+  url: {{baseURL}}/api/v0/scenes
+  body: none
+  auth: none
+}
+
+tests {
+  test("final_scenes: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("final_scenes: response", function () {
+    const body = res.getBody();
+
+    expect(body.scenes).to.deep.equal([]);
+  });
+}

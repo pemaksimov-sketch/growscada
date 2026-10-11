@@ -25,13 +25,13 @@ import (
 )
 
 const (
-	databaseDSN  = "postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable"
 	apiServerURL = "http://localhost:9090"
 )
 
 // serverArgs is the server's command-line/environment configuration.
 type serverArgs struct {
-	MaxSSEClients int `arg:"env:MAX_SSE_CLIENTS" default:"100" help:"maximum number of concurrent SSE event-stream connections"`
+	DatabaseDSN   string `arg:"env:DATABASE_DSN" default:"postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable" help:"PostgreSQL connection string"`
+	MaxSSEClients int    `arg:"env:MAX_SSE_CLIENTS" default:"100" help:"maximum number of concurrent SSE event-stream connections"`
 }
 
 type slogAdapter struct{}
@@ -63,7 +63,7 @@ func main() {
 	// INFRASTRUCTURE COMPONENTS
 
 	// Create database connection
-	sqlDB, err := sql.Open("postgres", databaseDSN)
+	sqlDB, err := sql.Open("postgres", cliArgs.DatabaseDSN)
 	// Add hook to shutdown database connection
 	gracedownManager.RegisterInfrastructure("Database", 15*time.Second, func(ctx context.Context) error {
 		if sqlDB != nil {

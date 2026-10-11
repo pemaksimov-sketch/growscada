@@ -1,0 +1,14 @@
+name: API integration
+on:
+  push:
+    branches: [path, 'codex/**']
+  pull_request:
+    branches: [path]
+  workflow_dispatch:
+jobs:
+  bruno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container and run Bruno integration tests
+        run: make test_api

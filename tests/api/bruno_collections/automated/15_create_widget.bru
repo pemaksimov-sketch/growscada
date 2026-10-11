@@ -1,0 +1,58 @@
+meta {
+  name: create_widget
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseURL}}/api/v0/scenes/{{sceneID}}/widgets
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI widget",
+    "position": {
+      "x": 20,
+      "y": 30,
+      "z": 0
+    },
+    "size": {
+      "width": 120,
+      "height": 60
+    },
+    "origin": {
+      "x": 0.5,
+      "y": 0.5
+    },
+    "rotation": {
+      "degrees": 0
+    },
+    "type_id": "{{typeID}}",
+    "labels": [],
+    "port_bindings": [
+      {
+        "port_name": "n",
+        "tag_id": "{{tagID}}"
+      }
+    ],
+    "scene_version": {{sceneVersion}}
+  }
+}
+
+tests {
+  test("create_widget: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("create_widget: response", function () {
+    const body = res.getBody();
+
+    expect(body.id).to.match(/^[0-9a-f-]{36}$/); expect(body.scene_version).to.equal(2); bru.setVar("widgetID", body.id); bru.setVar("sceneVersion", body.scene_version);
+  });
+}

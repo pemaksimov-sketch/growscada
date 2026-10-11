@@ -1,0 +1,37 @@
+meta {
+  name: update_scene
+  type: http
+  seq: 22
+}
+
+put {
+  url: {{baseURL}}/api/v0/scenes/{{sceneID}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI updated screen",
+    "width": 640,
+    "height": 480,
+    "background_html": "<div>Updated</div>",
+    "version": {{sceneVersion}}
+  }
+}
+
+tests {
+  test("update_scene: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("update_scene: response", function () {
+    const body = res.getBody();
+
+    expect(body.version).to.equal(4); bru.setVar("sceneVersion", body.version);
+  });
+}

@@ -1,0 +1,23 @@
+meta {
+  name: list_types
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{baseURL}}/api/v0/widget-types
+  body: none
+  auth: none
+}
+
+tests {
+  test("list_types: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("list_types: response", function () {
+    const body = res.getBody();
+
+    expect(body.widget_types).to.have.length(1); expect(body.widget_types[0].version).to.equal(2);
+  });
+}

@@ -1,0 +1,23 @@
+meta {
+  name: filter_tag
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseURL}}/api/v0/tags?name=ci.counter
+  body: none
+  auth: none
+}
+
+tests {
+  test("filter_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("filter_tag: response", function () {
+    const body = res.getBody();
+
+    expect(body.tags).to.have.length(1); expect(body.tags[0].id).to.equal(bru.getVar("tagID"));
+  });
+}

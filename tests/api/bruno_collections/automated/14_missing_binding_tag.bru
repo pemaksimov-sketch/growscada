@@ -1,0 +1,58 @@
+meta {
+  name: missing_binding_tag
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseURL}}/api/v0/scenes/{{sceneID}}/widgets
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI widget",
+    "position": {
+      "x": 20,
+      "y": 30,
+      "z": 0
+    },
+    "size": {
+      "width": 120,
+      "height": 60
+    },
+    "origin": {
+      "x": 0.5,
+      "y": 0.5
+    },
+    "rotation": {
+      "degrees": 0
+    },
+    "type_id": "{{typeID}}",
+    "labels": [],
+    "port_bindings": [
+      {
+        "port_name": "n",
+        "tag_id": "00000000-0000-4000-8000-000000000001"
+      }
+    ],
+    "scene_version": {{sceneVersion}}
+  }
+}
+
+tests {
+  test("missing_binding_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("missing_binding_tag: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(400); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+
+  });
+}

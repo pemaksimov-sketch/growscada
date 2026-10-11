@@ -1,0 +1,5 @@
+FROM node:22-alpine
+RUN npm install --global @usebruno/cli@4.2.1
+WORKDIR /collection
+COPY tests/api/bruno_collections/automated/ ./
+ENTRYPOINT ["bru", "run", "--bail", "--env-var", "baseURL=http://server:9090", "--reporter-junit", "/reports/bruno.xml"]

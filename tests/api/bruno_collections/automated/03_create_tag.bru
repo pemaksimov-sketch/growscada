@@ -1,0 +1,36 @@
+meta {
+  name: create_tag
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseURL}}/api/v0/tags
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "ci.counter",
+    "type": "integer",
+    "value": "0",
+    "quality": "good"
+  }
+}
+
+tests {
+  test("create_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("create_tag: response", function () {
+    const body = res.getBody();
+
+    expect(body.id).to.match(/^[0-9a-f-]{36}$/); bru.setVar("tagID", body.id);
+  });
+}

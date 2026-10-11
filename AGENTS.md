@@ -152,7 +152,7 @@ Tests of the tools that talk to the server (`internal/devicelink`, `internal/dev
 
 ## API Collections
 
-Manual/exploratory API tests are maintained as [Bruno](https://www.usebruno.com/) collections in `tests/api/bruno_collections/`: `growscada_server/` for the server REST API (the `localhost` environment points to `http://localhost:9090`) and `device_simulator/` for the simulator's control API (`localhost:9191`). Automated tests are Go tests only.
+Manual/exploratory API tests are maintained as [Bruno](https://www.usebruno.com/) collections in `tests/api/bruno_collections/`: `growscada_server/` for the server REST API (the `localhost` environment points to `http://localhost:9090`) and `device_simulator/` for the simulator's control API (`localhost:9191`). `automated/` is an ordered Bruno integration suite against a fresh database; `make test_api` builds the server container and runs it with disposable PostgreSQL and Bruno containers. GitHub and GitVerse workflows use this same target. See `tests/api/README.md`.
 
 ## MCP Servers
 

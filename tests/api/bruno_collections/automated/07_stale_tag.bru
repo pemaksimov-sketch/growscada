@@ -1,0 +1,35 @@
+meta {
+  name: stale_tag
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{baseURL}}/api/v0/tags/{{tagID}}/value
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "2",
+    "quality": "good",
+    "version": 1
+  }
+}
+
+tests {
+  test("stale_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("stale_tag: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(409); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+
+  });
+}

@@ -4,6 +4,8 @@
 
 ### Changed
 
+- API integration (task 30): `make test_api` builds the server/WASM container and runs 36 ordered Bruno requests against an isolated migrated PostgreSQL database. GitHub and GitVerse workflow definitions invoke the same script; JUnit results and container logs are retained. `DATABASE_DSN` configures the server database, retaining the previous local default.
+
 - Typed UI client (task 23): Project, Library and Operation share `apiclient.Server`, API contract types and a single error-to-toast mapper. An in-memory adapter tests CRUD, optimistic conflicts, draft preservation and selection without a server. HTTP route/header tests and browser CRUD cover the real adapter. With Go 1.26.1, the first refactor build changed WASM from 19,551,181 to 19,514,974 bytes (−36,207 bytes); no API schema change.
 
 ### Fixed
