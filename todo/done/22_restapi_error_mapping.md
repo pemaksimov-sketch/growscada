@@ -21,3 +21,8 @@ Status: needs-triage
 - `detail` у 404 имеет вид «Scene with ID '…' not found», без текста внутренних обёрток.
 - Коды ответов не меняются. Если меняются формулировки, это только `detail`, поэтому SchemaVersion поднимать не нужно. Bruno-коллекцию проверить.
 - `make build` и `make test` проходят.
+
+
+## Comments
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

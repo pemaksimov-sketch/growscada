@@ -31,3 +31,5 @@ Blocked by: 20
 ## Comments
 
 - 2026-10-06 (DDD-ревью задачи 20): политика по `widget_type_updated` — переходная. По ADR 0007 Project видит только Library Release, и правка WidgetType ни одной Scene не меняет; согласование Widgets переезжает в DraftChange смены закреплённого релиза (задача 33), и тогда эта политика удаляется.
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

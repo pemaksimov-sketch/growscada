@@ -29,3 +29,5 @@ Status: ready-for-agent
 ## Comments
 
 - 2026-10-05: форма событий (SceneID в событиях Widget, константы типов) вынесена в задачу 24.
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

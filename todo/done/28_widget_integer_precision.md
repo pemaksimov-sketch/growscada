@@ -28,3 +28,8 @@ Integer-тег счётчика со значением `9007199254740993` ви�
 - Юнит-тест в `uiutil` на значения на границе: `9007199254740991`, `9007199254740993`, `-9007199254740993`, `math.MaxInt64`, `math.MinInt64`.
 - Проверка в браузере: виджет с Integer-тегом `9007199254740993` в Operation и в превью Project ведёт себя так, как описано в контракте.
 - `make build` и `make test` проходят.
+
+
+## Comments
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

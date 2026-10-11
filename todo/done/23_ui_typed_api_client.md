@@ -25,3 +25,8 @@ Status: needs-triage
 - Поведение UI не меняется. В браузере: создание, изменение, удаление Scene, Widget, Tag и WidgetType работает, ошибки показываются toast'ом.
 - Есть тесты операций Project и Library на in-memory адаптере.
 - `make build` и `make test` проходят.
+
+
+## Comments
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

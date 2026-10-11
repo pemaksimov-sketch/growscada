@@ -14,3 +14,8 @@ Status: ready-for-agent
 - Изменить `background_html` Scene в Project: новый фон появляется на холсте Project и в Operation (другая вкладка).
 - Создание, перемещение, поворот и выделение виджетов на холсте работают как до изменения.
 - Проверить в браузере через chrome-devtools; `make build` и `make test` проходят.
+
+
+## Comments
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

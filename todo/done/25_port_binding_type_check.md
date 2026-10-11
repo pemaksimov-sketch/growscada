@@ -9,3 +9,8 @@
 - Тесты application-слоя на несовпадение типа и на смену `type_hint`; запись в `CHANGELOG.md`.
 - Код ответа на невалидную привязку — в рамках задачи 18 (400 вместо 500).
 - Появилось в ходе ревью задачи 13.
+
+
+## Comments
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.
