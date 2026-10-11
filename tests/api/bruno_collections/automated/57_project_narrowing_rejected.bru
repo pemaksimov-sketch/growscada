@@ -1,11 +1,11 @@
 meta {
-  name: project_narrowing_rejected
+  name: draft_type_can_narrow_after_release
   type: http
   seq: 62
 }
 
 put {
-  url: {{baseURL}}/api/v0/widget-types/{{projectType}}
+  url: {{baseURL}}/api/v0/libraries/00000000-0000-4000-8000-000000000003/widget-types/{{projectType}}
   body: json
   auth: none
 }
@@ -34,12 +34,12 @@ body:json {
 }
 
 tests {
-  test("project_narrowing_rejected: status and schema header", function () {
-    expect(res.getStatus()).to.equal(400);
+  test("draft_type_can_narrow_after_release: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
     expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
   });
-  test("project_narrowing_rejected: response", function () {
+  test("draft_type_can_narrow_after_release: updated library draft", function () {
     const body = res.getBody();
-    expect(body.status).to.equal(400); expect(body.title).to.be.a("string").and.not.empty;
+    expect(body.version).to.equal(2);
   });
 }

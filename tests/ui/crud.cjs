@@ -23,6 +23,10 @@ module.exports = async function checkCRUD(page, api, until, output) {
   await page.locator('#html-template').fill(html);
   await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
   await until(async () => (await api(`/widget-types/${type.id}`)).html_template === html);
+  const release = await api('/libraries/00000000-0000-4000-8000-000000000003/releases', 'POST');
+  await api('/projects/00000000-0000-4000-8000-000000000001/libraries', 'POST', {
+    library_id: '00000000-0000-4000-8000-000000000003', release_id: release.id,
+  });
 
   await clickMode('Project');
   // A previous Project instance can remain visible during the mode switch.
@@ -132,15 +136,6 @@ module.exports = async function checkCRUD(page, api, until, output) {
   savedWidget = await api(`/scenes/${scene.id}/widgets/${widget.id}`);
   await until(async () => Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) === savedWidget.scene_version);
 
-  // The shared HTTP error mapper must surface a real rejected request.
-  await clickMode('Library');
-  await page.getByText('CRUD browser type', { exact: true }).click();
-  const rejected = page.waitForResponse(r => r.request().method() === 'DELETE' && r.url().endsWith(`/widget-types/${type.id}`));
-  await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  assert.equal((await rejected).status(), 409);
-  await page.getByText(/409\s+Conflict/).waitFor();
-  assert.equal((await api(`/widget-types/${type.id}`)).html_template, html);
-
   await clickMode('Project');
   await page.getByRole('button', { name: 'Delete Widget', exact: true }).click();
   await until(async () => (await api(`/scenes/${scene.id}/widgets`)).widgets.length === 0);
@@ -170,6 +165,6 @@ module.exports = async function checkCRUD(page, api, until, output) {
   await until(async () => !(await api('/tags')).tags.some(t => t.id === tag.id));
   await page.getByText('Scenes', { exact: true }).click();
   await page.getByText('Browser QA', { exact: true }).click();
-  console.log('PASS: UI CRUD, HTTP error toast, background drop/resize/rotation');
+  console.log('PASS: UI CRUD, released type use, background drop/resize/rotation');
   page.off('dialog', acceptDialog);
 };

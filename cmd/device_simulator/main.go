@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/alexflint/go-arg"
+	"github.com/google/uuid"
 	"github.com/kipitix/gracedown"
 
 	"github.com/kipitix/growscada/internal/apiclient"
