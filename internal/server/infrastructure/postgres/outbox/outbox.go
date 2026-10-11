@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/google/uuid"
 
 	"github.com/kipitix/growscada/internal/server/domain/event"
 )
@@ -13,6 +14,10 @@ import (
 // no events. Each row carries the id of tx (the column's default); the
 // Dispatcher orders by it, so writers take no lock here.
 func Append(ctx context.Context, tx *sql.Tx, events []event.Event) error {
+	return AppendProject(ctx, tx, events, nil)
+}
+
+func AppendProject(ctx context.Context, tx *sql.Tx, events []event.Event, projectID *uuid.UUID) error {
 	if len(events) == 0 {
 		return nil
 	}
@@ -22,8 +27,8 @@ func Append(ctx context.Context, tx *sql.Tx, events []event.Event) error {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO outbox (type, payload) VALUES ($1, $2)`,
-			e.Type().String(), data,
+			`INSERT INTO outbox (type, payload, project_id) VALUES ($1, $2, $3)`,
+			e.Type().String(), data, projectID,
 		); err != nil {
 			return fmt.Errorf("cannot write %s to outbox: %w", e.Type(), err)
 		}

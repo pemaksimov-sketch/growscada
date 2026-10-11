@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 
 	manifestv0 "github.com/kipitix/growscada/contract/manifest/v0"
@@ -25,6 +26,7 @@ var errNoManifest = errors.New("no manifest given: use -f <file|directory|->")
 // TagManifest is a validated Tag document from a manifest.
 // InitialValue and InitialQuality are applied only when the tag is created.
 type TagManifest struct {
+	ProjectID      string
 	Name           string
 	Type           string
 	InitialValue   string
@@ -189,6 +191,14 @@ func checkAPIVersion(apiVersion string) error {
 }
 
 func validateTag(doc manifestv0.TagDocument) (TagManifest, error) {
+	projectID := doc.Metadata.Project
+	if projectID != "" {
+		parsed, err := uuid.Parse(projectID)
+		if err != nil || parsed == uuid.Nil {
+			return TagManifest{}, errors.New("metadata.project must be a nonzero project UUID")
+		}
+		projectID = parsed.String()
+	}
 	name := doc.Metadata.Name
 	if name == "" {
 		return TagManifest{}, errors.New("metadata.name is required")
@@ -223,6 +233,7 @@ func validateTag(doc manifestv0.TagDocument) (TagManifest, error) {
 	}
 
 	return TagManifest{
+		ProjectID:      projectID,
 		Name:           name,
 		Type:           tagType.String(),
 		InitialValue:   *spec.InitialValue,

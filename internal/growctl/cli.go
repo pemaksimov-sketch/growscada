@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/apiclient"
 )
 
@@ -48,6 +50,7 @@ func usageError(err error) error {
 // NewRootCommand builds the growctl command tree. Output goes to the command's
 // out writer (cmd.SetOut), manifests given as "-" are read from its input.
 func NewRootCommand() *cobra.Command {
+	projectID := os.Getenv("GROWCTL_PROJECT")
 	server := os.Getenv(ServerEnv)
 	if server == "" {
 		server = DefaultServer
@@ -67,18 +70,104 @@ func NewRootCommand() *cobra.Command {
 	})
 	root.PersistentFlags().StringVar(&server, "server", server,
 		"GrowSCADA REST API URL (env "+ServerEnv+")")
+	root.PersistentFlags().StringVar(&projectID, "project", projectID, "Project UUID (env GROWCTL_PROJECT; legacy default Main)")
+	root.PersistentPreRunE = func(*cobra.Command, []string) error {
+		if projectID != "" {
+			parsed, err := uuid.Parse(projectID)
+			if err != nil || parsed == uuid.Nil {
+				return usageError(errors.New("--project must be a nonzero project UUID"))
+			}
+		}
+		return nil
+	}
 
 	newClient := func() *Client {
-		return NewClient(server, &http.Client{Timeout: 30 * time.Second})
+		client := NewClient(server, &http.Client{Timeout: 30 * time.Second})
+		if projectID != "" {
+			client.Client = client.Client.ForProject(uuid.MustParse(projectID))
+		}
+		return client
 	}
 
 	root.AddCommand(
 		newApplyCommand(newClient),
+		newWidgetTypeCommand(newClient),
 		newDiffCommand(newClient),
 		newDeleteCommand(newClient),
 		newGetCommand(newClient),
 	)
 	return root
+}
+
+func newWidgetTypeCommand(newClient func() *Client) *cobra.Command {
+	group := &cobra.Command{Use: "widget-type", Short: "Manage WidgetTypes in a Library Draft", Args: cobra.ArbitraryArgs, RunE: runGroup}
+	var files []string
+	apply := &cobra.Command{
+		Use: "apply -f <file|directory|->", Short: "Create or update Library WidgetTypes from manifests", Args: noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := requireFiles(files); err != nil {
+				return err
+			}
+			manifests, err := ReadWidgetTypeManifests(files, cmd.InOrStdin())
+			if err != nil {
+				return err
+			}
+			return applyWidgetTypeManifests(cmd.Context(), newClient(), manifests, cmd.OutOrStdout())
+		},
+	}
+	addFileFlag(apply, &files)
+	group.AddCommand(apply)
+	return group
+}
+
+func applyWidgetTypeManifests(ctx context.Context, client *Client, manifests []WidgetTypeManifest, out io.Writer) error {
+	for _, manifest := range manifests {
+		current, err := client.ListLibraryWidgetTypes(ctx, manifest.LibraryID)
+		if err != nil {
+			return fmt.Errorf("library %s: %w", manifest.LibraryID, err)
+		}
+		ports := make([]apiv0.InputPort, len(manifest.InputPorts))
+		for i, port := range manifest.InputPorts {
+			ports[i] = apiv0.InputPort{Name: port.Name, Description: port.Description, TypeHint: port.TypeHint}
+		}
+		var existing *apiv0.WidgetTypeResponse
+		for i := range current {
+			if current[i].Name == manifest.Name {
+				existing = &current[i]
+				break
+			}
+		}
+		if existing == nil {
+			_, err = client.CreateLibraryWidgetType(ctx, manifest.LibraryID, apiv0.CreateWidgetTypeRequest{Name: manifest.Name, HtmlTemplate: manifest.HtmlTemplate, Script: manifest.Script, ScriptLanguage: manifest.ScriptLanguage, DefaultWidth: manifest.DefaultWidth, DefaultHeight: manifest.DefaultHeight, InputPorts: ports})
+			if err != nil {
+				return fmt.Errorf("widgettype/%s: %w", manifest.Name, err)
+			}
+			fmt.Fprintf(out, "created widgettype/%s in library %s\n", manifest.Name, manifest.LibraryID)
+			continue
+		}
+		if existing.HtmlTemplate == manifest.HtmlTemplate && existing.Script == manifest.Script && existing.ScriptLanguage == manifest.ScriptLanguage && existing.DefaultWidth == manifest.DefaultWidth && existing.DefaultHeight == manifest.DefaultHeight && sameManifestPorts(existing.InputPorts, ports) {
+			fmt.Fprintf(out, "unchanged widgettype/%s in library %s\n", manifest.Name, manifest.LibraryID)
+			continue
+		}
+		_, err = client.UpdateLibraryWidgetType(ctx, manifest.LibraryID, existing.ID, apiv0.UpdateWidgetTypeRequest{Name: manifest.Name, HtmlTemplate: manifest.HtmlTemplate, Script: manifest.Script, ScriptLanguage: manifest.ScriptLanguage, DefaultWidth: manifest.DefaultWidth, DefaultHeight: manifest.DefaultHeight, InputPorts: ports, Version: existing.Version})
+		if err != nil {
+			return fmt.Errorf("widgettype/%s: %w", manifest.Name, err)
+		}
+		fmt.Fprintf(out, "configured widgettype/%s in library %s\n", manifest.Name, manifest.LibraryID)
+	}
+	return nil
+}
+
+func sameManifestPorts(a, b []apiv0.InputPort) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // runGroup is the RunE of a command group: without arguments it prints help,
@@ -258,6 +347,9 @@ func deleteManifests(cmd *cobra.Command, client *Client, files []string) error {
 	if err != nil {
 		return err
 	}
+	if err := selectManifestProject(client, manifests); err != nil {
+		return err
+	}
 	server, err := fetchServerTags(ctx, client, manifests, false, NameFilter{})
 	if err != nil {
 		return err
@@ -323,11 +415,34 @@ func planApply(ctx context.Context, client *Client, files []string, stdin io.Rea
 	if err != nil {
 		return nil, err
 	}
+	if err := selectManifestProject(client, manifests); err != nil {
+		return nil, err
+	}
 	server, err := fetchServerTags(ctx, client, manifests, prune, scope)
 	if err != nil {
 		return nil, err
 	}
 	return PlanApply(manifests, server, prune)
+}
+
+func selectManifestProject(client *Client, manifests []TagManifest) error {
+	selected := client.ProjectID()
+	for _, manifest := range manifests {
+		if manifest.ProjectID == "" {
+			continue
+		}
+		projectID := uuid.MustParse(manifest.ProjectID) // validated by the parser
+		if selected != uuid.Nil && selected != projectID {
+			return errors.New("manifest project differs from --project/context or another document")
+		}
+		selected = projectID
+	}
+	if selected == uuid.Nil {
+		return nil
+	} // Older manifests keep the Main alias.
+	// An explicitly selected Main still uses scoped URLs like every project.
+	client.Client = client.Client.ForProject(selected)
+	return nil
 }
 
 // fetchServerTags returns the server tags the plan depends on: the manifests'

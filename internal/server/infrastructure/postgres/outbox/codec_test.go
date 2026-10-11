@@ -4,9 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/domain/version"
@@ -38,13 +41,23 @@ func sampleEvents(t *testing.T) []event.Event {
 	wtID := id.NewID[library.WidgetType]()
 	sceneID := id.NewID[scene.Scene]()
 	widgetID := id.NewID[scene.Widget]()
+	projectID := id.NewID[project.Project]()
+	libraryID := id.NewID[library.Library]()
 	return []event.Event{
+		project.NewEvent(event.EventTypeProjectCreated, projectID, ts),
+		project.NewEvent(event.EventTypeProjectUpdated, projectID, ts),
+		project.NewEvent(event.EventTypeProjectDeleted, projectID, ts),
+		project.NewEvent(event.EventTypeProjectLibraryPinsChanged, projectID, ts),
 		tag.NewTagCreatedEvent(tagID, ts),
+		tag.NewDefinitionUpdatedEvent(tagID, ts),
 		tag.NewTagUpdatedEvent(aTag, ts),
 		tag.NewTagDeletedEvent(tagID, ts),
 		library.NewWidgetTypeCreatedEvent(wtID, ts),
 		library.NewWidgetTypeUpdatedEvent(wtID, ts),
 		library.NewWidgetTypeDeletedEvent(wtID, ts),
+		library.NewLibraryCreatedEvent(libraryID, ts),
+		library.NewLibraryUpdatedEvent(libraryID, ts),
+		library.NewLibraryReleasedEvent(libraryID, uuid.New(), 2, ts),
 		scene.NewSceneCreatedEvent(sceneID, ts),
 		scene.NewSceneUpdatedEvent(sceneID, ts),
 		scene.NewSceneDeletedEvent(sceneID, ts),
@@ -92,6 +105,10 @@ func TestCodec_EveryEventSurvivesRoundTrip(t *testing.T) {
 func assertSameSubject(t *testing.T, original, decoded event.Event) {
 	t.Helper()
 	switch want := original.(type) {
+	case project.Event:
+		if got := decoded.(project.Event); got.ProjectID() != want.ProjectID() {
+			t.Fatalf("project ID %s, want %s", got.ProjectID(), want.ProjectID())
+		}
 	case tag.TagUpdatedEvent:
 		got := decoded.(tag.TagUpdatedEvent)
 		w, g := want.Tag(), got.Tag()
@@ -106,6 +123,15 @@ func assertSameSubject(t *testing.T, original, decoded event.Event) {
 	case library.WidgetTypeEvent:
 		if got := decoded.(library.WidgetTypeEvent); got.WidgetTypeID() != want.WidgetTypeID() {
 			t.Errorf("widget type ID %s, want %s", got.WidgetTypeID(), want.WidgetTypeID())
+		}
+	case library.LibraryEvent:
+		if got := decoded.(library.LibraryEvent); got.LibraryID() != want.LibraryID() {
+			t.Errorf("library ID %s, want %s", got.LibraryID(), want.LibraryID())
+		}
+	case library.LibraryReleasedEvent:
+		got := decoded.(library.LibraryReleasedEvent)
+		if got.LibraryID() != want.LibraryID() || got.ReleaseID() != want.ReleaseID() || got.Number() != want.Number() {
+			t.Errorf("release %s/%d for library %s, want %s/%d for %s", got.ReleaseID(), got.Number(), got.LibraryID(), want.ReleaseID(), want.Number(), want.LibraryID())
 		}
 	case scene.WidgetEvent:
 		got := decoded.(scene.WidgetEvent)

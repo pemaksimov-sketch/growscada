@@ -1,0 +1,7 @@
+.git
+.codegraph
+.venv
+bin
+artifacts
+**/node_modules
+**/*.test.exe

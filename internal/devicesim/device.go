@@ -21,6 +21,9 @@ var (
 	// ErrConnecting means the Device has not resolved its tags on the server
 	// yet, so their types — and which patterns fit them — are unknown.
 	ErrConnecting = errors.New("device is still connecting to the server")
+	// ErrPatternIncompatible means the configured pattern cannot generate a
+	// value of the TagType returned by the server.
+	ErrPatternIncompatible = errors.New("pattern is incompatible with tag type")
 )
 
 // Device states, as reported by Status.
@@ -129,7 +132,7 @@ func (d *Device) connect(ctx context.Context) error {
 	for i, t := range d.tags {
 		t.tag = resolved[i]
 		if err := t.setPattern(t.pattern, 0); err != nil {
-			return fmt.Errorf("tag %q: %w", t.tag.Name, err)
+			return fmt.Errorf("tag %q: %w: %v", t.tag.Name, ErrPatternIncompatible, err)
 		}
 	}
 	d.connected = true

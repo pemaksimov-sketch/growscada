@@ -12,8 +12,10 @@ import (
 
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 
-	apiv0 "github.com/kipitix/growscada/contract/api/v0"
+	"github.com/google/uuid"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
+	"net/http"
 )
 
 // maxEntries is the cap on how many events are kept in the client-side
@@ -46,8 +48,9 @@ const StateDisconnected = "eventlog.disconnected"
 
 // ServerEvent is a domain event received from the server's SSE stream.
 type ServerEvent struct {
-	Type string // EventType name, e.g. "tag_created"
-	ID   string // ID of the affected aggregate/client, may be empty
+	Type    string // EventType name, e.g. "tag_created"
+	ID      string // ID of the affected aggregate/client, may be empty
+	SceneID string // owning scene for widget events; empty on older servers
 	// Tag is the Tag's full new state (the JSON of GET /api/v0/tags/{id}),
 	// carried by tag_updated only; nil otherwise.
 	Tag json.RawMessage
@@ -63,6 +66,7 @@ type wireMessage struct {
 	Type      string          `json:"type"`
 	Timestamp string          `json:"timestamp"`
 	ID        string          `json:"id"`
+	SceneID   string          `json:"scene_id"`
 	Tag       json.RawMessage `json:"tag"`
 }
 
@@ -71,6 +75,7 @@ type Bar struct {
 	app.Compo
 
 	apiServerURL string
+	projectID    uuid.UUID
 
 	now       string
 	panelOpen bool
@@ -85,8 +90,12 @@ type Bar struct {
 	connectionDegraded bool
 }
 
-func NewBar(apiServerURL string) *Bar {
-	return &Bar{apiServerURL: apiServerURL}
+func NewBar(apiServerURL string, projectIDs ...uuid.UUID) *Bar {
+	b := &Bar{apiServerURL: apiServerURL}
+	if len(projectIDs) > 0 {
+		b.projectID = projectIDs[0]
+	}
+	return b
 }
 
 func (b *Bar) OnMount(ctx app.Context) {
@@ -164,7 +173,8 @@ func (b *Bar) connect(ctx app.Context) {
 }
 
 func (b *Bar) openEventSource() {
-	es := app.Window().Get("EventSource").New(b.apiServerURL + apiv0.PathPrefix + "/events")
+	client := apiclient.New(b.apiServerURL, http.DefaultClient).ForProject(b.projectID)
+	es := app.Window().Get("EventSource").New(client.EventsURL())
 	es.Set("onmessage", b.onMessage)
 	es.Set("onerror", b.onError)
 	es.Set("onopen", b.onOpen)
@@ -194,7 +204,7 @@ func (b *Bar) handleMessage(ctx app.Context, data string) {
 		return
 	}
 
-	ctx.NewActionWithValue(ActionServerEvent, ServerEvent{Type: msg.Type, ID: msg.ID, Tag: msg.Tag})
+	ctx.NewActionWithValue(ActionServerEvent, ServerEvent{Type: msg.Type, ID: msg.ID, SceneID: msg.SceneID, Tag: msg.Tag})
 
 	cat := categoryOther
 	text := msg.Type

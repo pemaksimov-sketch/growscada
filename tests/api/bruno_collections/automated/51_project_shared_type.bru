@@ -1,0 +1,44 @@
+meta {
+  name: project_shared_type
+  type: http
+  seq: 53
+}
+
+post {
+  url: {{baseURL}}/api/v0/libraries/00000000-0000-4000-8000-000000000003/widget-types
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI projects type",
+    "html_template": "",
+    "script": "",
+    "script_language": "javascript",
+    "default_width": 100,
+    "default_height": 50,
+    "input_ports": [
+      {
+        "name": "n",
+        "description": "Counter",
+        "type_hint": "integer"
+      }
+    ]
+  }
+}
+
+tests {
+  test("project_shared_type: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("project_shared_type: response", function () {
+    const body = res.getBody();
+    bru.setVar("projectType",body.id);
+  });
+}

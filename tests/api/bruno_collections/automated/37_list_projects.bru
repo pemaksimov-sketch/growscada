@@ -1,0 +1,22 @@
+meta {
+  name: list_projects
+  type: http
+  seq: 39
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects
+  body: none
+  auth: none
+}
+
+tests {
+  test("list_projects: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("list_projects: response", function () {
+    const body = res.getBody();
+    expect(body.projects).to.have.length(1); expect(body.projects[0].name).to.equal("Main"); bru.setVar("mainProject",body.projects[0].id);
+  });
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/google/uuid"
 	"github.com/kipitix/gracedown"
 
 	"github.com/kipitix/growscada/internal/apiclient"
@@ -23,6 +24,7 @@ import (
 type simulatorArgs struct {
 	Config  string `arg:"--config,required" help:"YAML config of the simulated device"`
 	Server  string `arg:"--server,env:DEVSIM_SERVER" help:"GrowSCADA REST API URL; overrides the config"`
+	Token   string `arg:"--token,env:GROWSCADA_DEVICE_TOKEN" help:"Device Token used to authenticate with GrowSCADA"`
 	Control string `arg:"--control" help:"control API listen address; overrides the config"`
 }
 
@@ -54,7 +56,14 @@ func main() {
 	// Create a graceful shutdown manager
 	gracedownManager := gracedown.NewManager(gracedown.WithLogger(slogAdapter{}))
 
-	link := devicelink.NewRESTLink(apiclient.New(cfg.Server, &http.Client{Timeout: 10 * time.Second}))
+	client := apiclient.New(cfg.Server, &http.Client{Timeout: 10 * time.Second})
+	if args.Token != "" {
+		client = client.WithBearerToken(args.Token)
+	}
+	if cfg.Project != "" {
+		client = client.ForProject(uuid.MustParse(cfg.Project))
+	}
+	link := devicelink.NewRESTLink(client)
 	device := devicesim.New(cfg, link, devicesim.Options{})
 
 	// INTERFACE COMPONENTS
@@ -100,9 +109,8 @@ func main() {
 		err := device.Run(runCtx)
 		close(deviceDone) // before an emergency exit, whose Device hook waits for it
 		if err != nil {
-			// A missing tag or a pattern that does not fit its tag's type.
 			slog.Error("Device error", "error", err)
-			emergencyExit(gracedownManager, gracedown.ExitConfig)
+			emergencyExit(gracedownManager, deviceExitCode(err))
 		}
 	}()
 
@@ -116,6 +124,24 @@ func main() {
 	slog.Info("Device simulator stopped gracefully")
 
 	os.Exit(gracedown.ExitSuccess)
+}
+
+func deviceExitCode(err error) int {
+	if errors.Is(err, devicelink.ErrTagNotFound) || errors.Is(err, devicesim.ErrPatternIncompatible) {
+		return gracedown.ExitConfig
+	}
+	var statusErr *apiclient.StatusError
+	if errors.As(err, &statusErr) {
+		if statusErr.Status == http.StatusUnauthorized || statusErr.Status == http.StatusForbidden {
+			return gracedown.ExitNoPerm
+		}
+		if statusErr.Status >= http.StatusBadRequest && statusErr.Status < http.StatusInternalServerError {
+			return gracedown.ExitProtocol
+		}
+	}
+	// Invalid URLs, TLS verification failures and other non-transient transport
+	// errors indicate that the Gateway cannot speak the configured protocol.
+	return gracedown.ExitProtocol
 }
 
 func readConfig(path string) (devicesim.Config, error) {

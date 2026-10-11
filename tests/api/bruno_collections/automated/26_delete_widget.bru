@@ -1,0 +1,23 @@
+meta {
+  name: delete_widget
+  type: http
+  seq: 28
+}
+
+delete {
+  url: {{baseURL}}/api/v0/scenes/{{sceneID}}/widgets/{{widgetID}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("delete_widget: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("delete_widget: response", function () {
+    const body = res.getBody();
+
+    expect(body.scene_version).to.equal(5);
+  });
+}

@@ -29,14 +29,14 @@ func cleanWidgetTypes(t *testing.T) {
 func newWidgetTypeService() application.WidgetTypeService {
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	return application.NewWidgetTypeService(repo, sceneRepo)
+	return application.NewWidgetTypeService(repo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
 }
 
 func newWidgetTypeServiceWithBus(t *testing.T) (application.WidgetTypeService, eventbus.EventBus) {
 	bus, onCommit := deliveredOnCommit(t)
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB, onCommit)
-	return application.NewWidgetTypeService(repo, sceneRepo), bus
+	return application.NewWidgetTypeService(repo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB)), bus
 }
 
 var testCreateWidgetTypeInput = appdto.WidgetTypeInput{
@@ -514,7 +514,7 @@ func TestUpdateWidgetType_RemovedPort_CleansBindingsOnAllWidgetsInSameScene(t *t
 		OriginX:      0.5,
 		OriginY:      0.5,
 		TypeID:       createdType.ID,
-		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: uuid.New()}},
+		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: createBoundTag(t)}},
 	}
 	first, err := sceneSvc.CreateWidget(ctx, sc.ID, sc.Version, widgetInput)
 	if err != nil {
@@ -528,7 +528,7 @@ func TestUpdateWidgetType_RemovedPort_CleansBindingsOnAllWidgetsInSameScene(t *t
 	}
 
 	// Drop the "value" port from the type: both widgets' bindings to it are
-	// now orphaned and must be cleaned up by the same UpdateWidgetType call.
+	// now orphaned and must be cleaned up by the durable policy.
 	_, err = wtSvc.UpdateWidgetType(ctx, createdType.ID, createdType.Version, appdto.WidgetTypeInput{
 		Name:           createdType.Name,
 		HtmlTemplate:   createdType.HtmlTemplate,
@@ -542,6 +542,7 @@ func TestUpdateWidgetType_RemovedPort_CleansBindingsOnAllWidgetsInSameScene(t *t
 		t.Fatalf("UpdateWidgetType: %v", err)
 	}
 
+	drainReconciliation(t, nil)
 	w1, err := sceneSvc.FindWidgetByID(ctx, sc.ID, first.ID)
 	if err != nil {
 		t.Fatalf("FindWidgetByID 1: %v", err)
@@ -603,7 +604,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 		OriginX:      0.5,
 		OriginY:      0.5,
 		TypeID:       createdType.ID,
-		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: uuid.New()}},
+		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: createBoundTag(t)}},
 	})
 	if err != nil {
 		t.Fatalf("CreateWidget: %v", err)
@@ -615,7 +616,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 			t.Fatalf("concurrent UpdateScene: %v", err)
 		}
 	}
-	racingSvc := application.NewWidgetTypeService(repositories.NewWidgetTypeRepositoryPostgres(testDB), sceneRepo)
+	racingSvc := application.NewWidgetTypeService(repositories.NewWidgetTypeRepositoryPostgres(testDB), sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
 
 	_, err = racingSvc.UpdateWidgetType(ctx, createdType.ID, createdType.Version, appdto.WidgetTypeInput{
 		Name:           createdType.Name,
@@ -630,6 +631,7 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 	if err != nil {
 		t.Fatalf("UpdateWidgetType: %v", err)
 	}
+	drainReconciliation(t, sceneRepo)
 	found, err := sceneSvc.FindSceneByID(ctx, sc.ID)
 	if err != nil {
 		t.Fatalf("FindSceneByID: %v", err)
@@ -646,9 +648,15 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 	}
 }
 
-func TestDeleteWidgetType_UsedByWidget_ReturnsErrWidgetTypeInUse(t *testing.T) {
+func TestDeleteWidgetType_UsedByProjectWidget_RemovesDraftOnly(t *testing.T) {
 	cleanScenes(t)
 	cleanWidgetTypes(t)
+	// These service fixtures use the pre-split public-schema database. Model
+	// the current Library Release layout, where project Widgets resolve their
+	// WidgetType from an immutable pin rather than this mutable Draft row.
+	if _, err := testDB.Exec(`ALTER TABLE widgets DROP CONSTRAINT IF EXISTS fk_widgets_type_id`); err != nil {
+		t.Fatalf("prepare Library Release schema: %v", err)
+	}
 	wtSvc := newWidgetTypeService()
 	sceneSvc := newSceneService()
 	ctx := context.Background()
@@ -664,13 +672,15 @@ func TestDeleteWidgetType_UsedByWidget_ReturnsErrWidgetTypeInUse(t *testing.T) {
 		t.Fatalf("CreateWidget: %v", err)
 	}
 
-	_, err = wtSvc.DeleteWidgetTypeByID(ctx, created.ID)
-
-	if !errors.Is(err, library.ErrWidgetTypeInUse) {
-		t.Errorf("expected wrapped ErrWidgetTypeInUse, got: %v", err)
+	if _, err = wtSvc.DeleteWidgetTypeByID(ctx, created.ID); err != nil {
+		t.Fatalf("draft type delete should not remove a type from the project's pinned release: %v", err)
 	}
-	if _, err := wtSvc.FindWidgetTypeByID(ctx, created.ID); err != nil {
-		t.Errorf("widget type after refused delete: %v", err)
+	if _, err := wtSvc.FindWidgetTypeByID(ctx, created.ID); !errors.Is(err, library.ErrWidgetTypeNotFound) {
+		t.Errorf("draft widget type still exists after delete: %v", err)
+	}
+	widgets, err := sceneSvc.FindWidgetsBySceneID(ctx, sc.ID)
+	if err != nil || len(widgets) != 1 || widgets[0].TypeID != created.ID {
+		t.Errorf("project widget was affected by draft deletion: %+v %v", widgets, err)
 	}
 }
 
@@ -725,7 +735,7 @@ func TestUpdateWidgetType_RemovedPort_OutboxHoldsEventsOfEveryChangedScene(t *te
 	}
 	bound := appdto.WidgetInput{
 		Name: "bound", Width: 100, Height: 100, OriginX: 0.5, OriginY: 0.5, TypeID: createdType.ID,
-		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: uuid.New()}},
+		PortBindings: []appdto.PortBinding{{PortName: "value", TagID: createBoundTag(t)}},
 	}
 	unbound := bound
 	unbound.PortBindings = nil
@@ -755,7 +765,12 @@ func TestUpdateWidgetType_RemovedPort_OutboxHoldsEventsOfEveryChangedScene(t *te
 		t.Fatalf("UpdateWidgetType: %v", err)
 	}
 
-	got := outboxSceneIDs(t)
+	got := map[string][]uuid.UUID{}
+	for _, e := range drainReconciliation(t, nil) {
+		if ev, ok := e.(scene.WidgetEvent); ok {
+			got[e.Type().String()] = append(got[e.Type().String()], ev.SceneID().UUID())
+		}
+	}
 	if !slices.Equal(got["widget_updated"], changedScenes) {
 		t.Errorf("widget_updated in the outbox for scenes %v, want each changed scene %v", got["widget_updated"], changedScenes)
 	}

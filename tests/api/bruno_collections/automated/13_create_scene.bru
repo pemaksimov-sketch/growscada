@@ -1,0 +1,36 @@
+meta {
+  name: create_scene
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{baseURL}}/api/v0/scenes
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI screen",
+    "width": 640,
+    "height": 480,
+    "background_html": "<div>CI</div>"
+  }
+}
+
+tests {
+  test("create_scene: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("create_scene: response", function () {
+    const body = res.getBody();
+
+    expect(body.id).to.match(/^[0-9a-f-]{36}$/); bru.setVar("sceneID", body.id); bru.setVar("sceneVersion", 1);
+  });
+}

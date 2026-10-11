@@ -1,0 +1,32 @@
+meta {
+  name: create_project_b
+  type: http
+  seq: 41
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI project B"
+  }
+}
+
+tests {
+  test("create_project_b: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("create_project_b: response", function () {
+    const body = res.getBody();
+    bru.setVar("projectB",body.id);
+  });
+}

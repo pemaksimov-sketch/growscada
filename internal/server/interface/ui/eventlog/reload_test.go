@@ -32,7 +32,7 @@ func TestReloadTargetsFor(t *testing.T) {
 // aggregate event type added to the event log but not routed.
 func TestReloadTargetsFor_CoversEveryKnownEvent(t *testing.T) {
 	for eventType, info := range eventTypeInfoByType {
-		if info.category == categoryClient {
+		if info.category == categoryClient || info.category == categoryOther {
 			continue // connections change no server-backed list
 		}
 		if ReloadTargetsFor(eventType) == (ReloadTargets{}) {

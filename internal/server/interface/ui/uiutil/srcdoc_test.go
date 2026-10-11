@@ -1,6 +1,7 @@
 package uiutil
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -48,11 +49,32 @@ func TestInputsJSON(t *testing.T) {
 func TestBuildSrcdoc_RendersOnceWithInputs(t *testing.T) {
 	ports := []uidto.InputPortDTO{{Name: "value", TypeHint: "integer"}}
 	doc := BuildSrcdoc("<div></div>", "function render(inputs){}", PreviewInputs(map[string]string{"value": "5"}, ports), ports, "#fff")
-	if !strings.Contains(doc, `render({"value":{"value":5}})`) {
+	if !strings.Contains(doc, `render({"value":{"value":5,"raw":"5"}})`) {
 		t.Errorf("expected a render call with the inputs, got %s", doc)
 	}
 	if strings.Contains(doc, `addEventListener("message"`) {
 		t.Error("a preview must not listen for messages")
+	}
+}
+
+func TestNewInput_PreservesExactIntegerString(t *testing.T) {
+	for _, raw := range []string{
+		"9007199254740991", "9007199254740993", "-9007199254740993",
+		"9223372036854775807", "-9223372036854775808",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			encoded := InputsJSON(Inputs{"n": NewInput(raw, "integer")})
+			var decoded map[string]struct {
+				Value float64 `json:"value"`
+				Raw   string  `json:"raw"`
+			}
+			if err := json.Unmarshal([]byte(encoded), &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded["n"].Raw != raw {
+				t.Fatalf("exact integer lost across JSON encoding: got %q, want %q", decoded["n"].Raw, raw)
+			}
+		})
 	}
 }
 

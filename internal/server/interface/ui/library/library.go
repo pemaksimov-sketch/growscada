@@ -1,13 +1,17 @@
 package library
 
 import (
+	"context"
+	"net/http"
 	"slices"
+
+	"github.com/google/uuid"
+	"github.com/kipitix/growscada/internal/apiclient"
 
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/interface/ui/eventlog"
-	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uidto"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 )
@@ -23,8 +27,12 @@ type Library struct {
 	// would lose the result and leave a Reloader loading forever.
 	compoCtx          app.Context
 	ThemeMode         string // exported so go-app detects theme changes and re-renders
-	apiServerURL      string
+	client            apiclient.Server
+	tasks             uiutil.Tasks
 	widgetTypes       []widgetTypeItem
+	libraries         []apiv0.LibraryResponse
+	selectedLibraryID string
+	releases          []apiv0.LibraryReleaseResponse
 	loading           bool
 	reloader          uiutil.Reloader
 	selectedID        string
@@ -43,14 +51,16 @@ type Library struct {
 }
 
 func NewLibrary(apiServerURL string) *Library {
-	return &Library{apiServerURL: apiServerURL}
+	return &Library{client: apiclient.New(apiServerURL, http.DefaultClient)}
 }
 
 func (l *Library) OnMount(ctx app.Context) {
 	l.compoCtx = ctx
+	l.tasks = uiutil.BrowserTasks(ctx)
 	ctx.ObserveState("theme", &l.ThemeMode)
 	ctx.LocalStorage().Get("library:selectedID", &l.selectedID)
-	l.loadList(ctx)
+	ctx.LocalStorage().Get("library:selectedLibraryID", &l.selectedLibraryID)
+	l.loadLibraries(ctx)
 
 	ctx.Handle(eventlog.ActionServerEvent, func(ctx app.Context, a app.Action) {
 		if ev, ok := a.Value.(eventlog.ServerEvent); ok && eventlog.ReloadTargetsFor(ev.Type).WidgetTypes {
@@ -59,29 +69,107 @@ func (l *Library) OnMount(ctx app.Context) {
 	})
 }
 
+func (l *Library) loadLibraries(ctx app.Context) {
+	api, ok := l.client.(apiclient.LibraryServer)
+	if !ok {
+		l.loadList(ctx)
+		return
+	}
+	uiutil.Request(l.tasks, func(ctx context.Context) ([]apiv0.LibraryResponse, error) { return api.ListLibraries(ctx) }, func(items []apiv0.LibraryResponse) {
+		l.libraries = items
+		found := false
+		for _, item := range items {
+			if item.ID.String() == l.selectedLibraryID {
+				found = true
+				break
+			}
+		}
+		if !found && len(items) > 0 {
+			l.selectedLibraryID = items[0].ID.String()
+			l.tasks.Store("library:selectedLibraryID", l.selectedLibraryID)
+		}
+		l.loadList(l.compoCtx)
+		l.loadReleases(l.compoCtx)
+	}, nil)
+}
+
+func (l *Library) loadReleases(ctx app.Context) {
+	api, ok := l.client.(apiclient.LibraryServer)
+	if !ok || l.selectedLibraryID == "" {
+		return
+	}
+	libraryID, err := uuid.Parse(l.selectedLibraryID)
+	if err != nil {
+		return
+	}
+	uiutil.Request(l.tasks, func(ctx context.Context) ([]apiv0.LibraryReleaseResponse, error) {
+		return api.ListLibraryReleases(ctx, libraryID)
+	}, func(items []apiv0.LibraryReleaseResponse) { l.releases = items }, nil)
+}
+
+func (l *Library) publishRelease(ctx app.Context) {
+	api, ok := l.client.(apiclient.LibraryServer)
+	if !ok || l.selectedLibraryID == "" {
+		return
+	}
+	libraryID, err := uuid.Parse(l.selectedLibraryID)
+	if err != nil {
+		return
+	}
+	uiutil.Request(l.tasks, func(ctx context.Context) (apiv0.CreateLibraryReleaseResponse, error) {
+		return api.PublishLibrary(ctx, libraryID)
+	}, func(apiv0.CreateLibraryReleaseResponse) { l.loadReleases(l.compoCtx) }, nil)
+}
+
+func (l *Library) createWidgetType(ctx context.Context, input apiv0.CreateWidgetTypeRequest) (apiv0.CreateWidgetTypeResponse, error) {
+	if api, ok := l.client.(apiclient.LibraryServer); ok && l.selectedLibraryID != "" {
+		id, err := uuid.Parse(l.selectedLibraryID)
+		if err != nil {
+			return apiv0.CreateWidgetTypeResponse{}, err
+		}
+		return api.CreateLibraryWidgetType(ctx, id, input)
+	}
+	return l.client.CreateWidgetType(ctx, input)
+}
+func (l *Library) updateWidgetType(ctx context.Context, id uuid.UUID, input apiv0.UpdateWidgetTypeRequest) (apiv0.UpdateWidgetTypeResponse, error) {
+	if api, ok := l.client.(apiclient.LibraryServer); ok && l.selectedLibraryID != "" {
+		libraryID, err := uuid.Parse(l.selectedLibraryID)
+		if err != nil {
+			return apiv0.UpdateWidgetTypeResponse{}, err
+		}
+		return api.UpdateLibraryWidgetType(ctx, libraryID, id, input)
+	}
+	return l.client.UpdateWidgetType(ctx, id, input)
+}
+func (l *Library) deleteWidgetType(ctx context.Context, id uuid.UUID) (apiv0.WidgetTypeResponse, error) {
+	if api, ok := l.client.(apiclient.LibraryServer); ok && l.selectedLibraryID != "" {
+		libraryID, err := uuid.Parse(l.selectedLibraryID)
+		if err != nil {
+			return apiv0.WidgetTypeResponse{}, err
+		}
+		return api.DeleteLibraryWidgetType(ctx, libraryID, id)
+	}
+	return l.client.DeleteWidgetType(ctx, id)
+}
+
 // ── Data loading ──────────────────────────────────────────────────────────────
 
 // loadList (re)loads the widget type list; concurrent requests are coalesced.
 func (l *Library) loadList(ctx app.Context) {
-	ctx = l.compoCtx
-	if !l.reloader.Start() {
-		return
-	}
 	l.loading = true
-	url := l.apiServerURL + apiv0.PathPrefix + "/widget-types"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getWidgetTypesResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			l.loading = false
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				l.setWidgetTypes(ctx, result.WidgetTypes)
+	uiutil.Load(l.tasks, &l.reloader, uiutil.LoadRequest[[]apiv0.WidgetTypeResponse]{
+		Call: func(ctx context.Context) ([]apiv0.WidgetTypeResponse, error) {
+			if api, ok := l.client.(apiclient.LibraryServer); ok && l.selectedLibraryID != "" {
+				libraryID, err := uuid.Parse(l.selectedLibraryID)
+				if err != nil {
+					return nil, err
+				}
+				return api.ListLibraryWidgetTypes(ctx, libraryID)
 			}
-			if l.reloader.Done() {
-				l.loadList(ctx)
-			}
-		})
+			return l.client.ListWidgetTypes(ctx)
+		}, Reload: func() { l.loadList(l.compoCtx) },
+		Finished: func() { l.loading = false },
+		Apply:    func(result []apiv0.WidgetTypeResponse) { l.setWidgetTypes(l.compoCtx, result) },
 	})
 }
 
@@ -99,7 +187,7 @@ func (l *Library) setWidgetTypes(ctx app.Context, items []widgetTypeItem) {
 	switch {
 	case !exists:
 		l.clearSelection()
-		ctx.LocalStorage().Set("library:selectedID", "")
+		l.tasks.Store("library:selectedID", "")
 	case !known:
 		l.selectItem(l.selectedID)
 	default:
@@ -118,7 +206,7 @@ func (l *Library) clearSelection() {
 
 func (l *Library) findItem(id string) (widgetTypeItem, bool) {
 	for _, it := range l.widgetTypes {
-		if it.ID == id {
+		if it.ID.String() == id {
 			return it, true
 		}
 	}
@@ -141,7 +229,7 @@ func (l *Library) mergeSelected(old, current widgetTypeItem) {
 
 func (l *Library) selectItem(id string) {
 	for _, it := range l.widgetTypes {
-		if it.ID == id {
+		if it.ID.String() == id {
 			l.selectedID = id
 			l.editedName = it.Name
 			l.editedHTML = it.HtmlTemplate

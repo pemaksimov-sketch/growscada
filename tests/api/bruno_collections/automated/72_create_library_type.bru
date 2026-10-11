@@ -1,0 +1,34 @@
+meta {
+  name: create_library_type
+  type: http
+  seq: 78
+}
+
+post {
+  url: {{baseURL}}/api/v0/libraries/{{testLibraryID}}/widget-types
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI release gauge",
+    "html_template": "<div></div>",
+    "script": "function update() {}",
+    "script_language": "javascript",
+    "default_width": 120,
+    "default_height": 60,
+    "input_ports": []
+  }
+}
+
+tests {
+  test("create_library_type: saved in selected library", function () {
+    expect(res.getStatus()).to.equal(201);
+    bru.setVar("libraryWidgetTypeID", res.getBody().id);
+  });
+}

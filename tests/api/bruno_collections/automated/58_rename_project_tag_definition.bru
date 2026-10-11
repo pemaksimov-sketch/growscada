@@ -1,0 +1,36 @@
+meta {
+  name: rename_project_tag_definition
+  type: http
+  seq: 64
+}
+
+put {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}/tags/{{projectTagA}}/definition
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "ci.project.renamed",
+    "version": 1
+  }
+}
+
+tests {
+  test("rename_project_tag_definition: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("rename_project_tag_definition: definition version leaves runtime state intact", function () {
+    const body = res.getBody();
+    expect(body.name).to.equal("ci.project.renamed");
+    expect(body.version).to.equal(2);
+    expect(body.sequence).to.equal(1);
+    expect(body.value).to.equal("0");
+  });
+}

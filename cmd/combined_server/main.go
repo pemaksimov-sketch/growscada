@@ -10,11 +10,18 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/google/uuid"
 	"github.com/kipitix/gracedown"
 	"github.com/kipitix/growscada/internal/server/application"
+	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
+	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/migrations"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
+	runtimestore "github.com/kipitix/growscada/internal/server/infrastructure/postgres/runtime"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
+	"github.com/kipitix/growscada/internal/server/interface/httpserver"
 	"github.com/kipitix/growscada/internal/server/interface/restapi"
 	"github.com/kipitix/growscada/internal/server/interface/ui/root"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
@@ -24,13 +31,14 @@ import (
 )
 
 const (
-	databaseDSN  = "postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable"
 	apiServerURL = "http://localhost:9090"
 )
 
 // serverArgs is the server's command-line/environment configuration.
 type serverArgs struct {
-	MaxSSEClients int `arg:"env:MAX_SSE_CLIENTS" default:"100" help:"maximum number of concurrent SSE event-stream connections"`
+	DatabaseDSN        string `arg:"env:DATABASE_DSN" default:"postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable" help:"PostgreSQL connection string"`
+	RuntimeDatabaseDSN string `arg:"env:RUNTIME_DATABASE_DSN" help:"Runtime PostgreSQL connection string (defaults to DATABASE_DSN)"`
+	MaxSSEClients      int    `arg:"env:MAX_SSE_CLIENTS" default:"100" help:"maximum number of concurrent SSE event-stream connections"`
 }
 
 type slogAdapter struct{}
@@ -62,7 +70,7 @@ func main() {
 	// INFRASTRUCTURE COMPONENTS
 
 	// Create database connection
-	sqlDB, err := sql.Open("postgres", databaseDSN)
+	sqlDB, err := sql.Open("postgres", cliArgs.DatabaseDSN)
 	// Add hook to shutdown database connection
 	gracedownManager.RegisterInfrastructure("Database", 15*time.Second, func(ctx context.Context) error {
 		if sqlDB != nil {
@@ -81,6 +89,43 @@ func main() {
 		slog.Error("Database ping error", "error", err)
 		emergencyExit(gracedownManager, gracedown.ExitIOErr)
 	}
+	runtimeDSN := cliArgs.RuntimeDatabaseDSN
+	if runtimeDSN == "" {
+		runtimeDSN = cliArgs.DatabaseDSN
+	}
+	runtimeDB, err := sql.Open("postgres", runtimeDSN)
+	if err != nil {
+		slog.Error("Runtime database connection error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	gracedownManager.RegisterInfrastructure("Runtime database", 15*time.Second, func(context.Context) error { return runtimeDB.Close() })
+	if err := runtimeDB.Ping(); err != nil {
+		slog.Error("Runtime database ping error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	if err := migrations.Apply(context.Background(), sqlDB, runtimeDB); err != nil {
+		slog.Error("Database migrations failed", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	// Reopen Engineering connections with the moved schema first in search_path.
+	if err := sqlDB.Close(); err != nil {
+		slog.Error("Database close after migrations failed", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	engineeringDSN, err := migrations.WithEngineeringSearchPath(cliArgs.DatabaseDSN)
+	if err != nil {
+		slog.Error("Engineering database DSN invalid", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	sqlDB, err = sql.Open("postgres", engineeringDSN)
+	if err != nil {
+		slog.Error("Engineering database connection error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		slog.Error("Engineering database ping error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
 
 	// Create message broker connection
 	// TODO
@@ -92,10 +137,6 @@ func main() {
 	dispatcher := outbox.NewDispatcher(sqlDB, eventBus.Publish)
 	dispatcherCtx, stopDispatcher := context.WithCancel(context.Background())
 	dispatcherDone := make(chan struct{})
-	go func() {
-		dispatcher.Run(dispatcherCtx)
-		close(dispatcherDone)
-	}()
 	// stopOutbox stops the dispatcher and delivers what is left in the outbox
 	stopOutbox := func(ctx context.Context) {
 		stopDispatcher()
@@ -108,15 +149,41 @@ func main() {
 
 	// INTERFACE COMPONENTS
 	// API server
-	tagRepository := repositories.NewTagRepositoryPostgres(sqlDB, notifyDispatcher)
+	projectRepository := repositories.NewProjectRepositoryPostgres(sqlDB, project.DefaultOrganizationID(), notifyDispatcher)
+	projectService := application.NewProjectService(projectRepository, project.DefaultOrganizationID())
+	libraryRepository := repositories.NewLibraryRepositoryPostgres(sqlDB, project.DefaultOrganizationID(), notifyDispatcher)
+	mainRepositories := repositories.ForProject(sqlDB, project.MainID(), notifyDispatcher)
+	tagRepository := mainRepositories.Tags()
 	widgetTypeRepository := repositories.NewWidgetTypeRepositoryPostgres(sqlDB, notifyDispatcher)
-	sceneRepository := repositories.NewSceneRepositoryPostgres(sqlDB, notifyDispatcher)
+	libraryService := application.NewLibraryService(libraryRepository, project.DefaultOrganizationID(), func(rawID uuid.UUID) library.WidgetTypeRepository {
+		return repositories.NewWidgetTypeRepositoryPostgresInLibrary(sqlDB, rawID, notifyDispatcher)
+	})
+	sceneRepository := mainRepositories.Scenes()
+	go func() {
+		dispatcher.Run(dispatcherCtx)
+		close(dispatcherDone)
+	}()
 	// Create services
-	tagService := application.NewTagService(tagRepository)
-	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository)
-	sceneService := application.NewSceneService(sceneRepository, widgetTypeRepository)
+	mainDefinitions := repositories.NewTagDefinitionRepository(sqlDB, project.MainID(), notifyDispatcher)
+	mainPinnedTypes := repositories.NewProjectWidgetTypeRepository(sqlDB, project.MainID().UUID())
+	processState := runtimestore.New(runtimeDB).WithLiveEvents(eventBus.Publish)
+	tagService := application.NewSplitTagService(mainDefinitions, processState, project.MainID().UUID())
+	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository, application.WithWidgetTypeDefinitions(mainDefinitions))
+	sceneService := application.NewSplitSceneService(sceneRepository, mainPinnedTypes, mainDefinitions)
 	// Create router
-	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients)
+	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients,
+		restapi.WithProjects(projectService, func(rawID uuid.UUID) restapi.ProjectServices {
+			scope := repositories.ForProject(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher)
+			definitions, scenes := repositories.NewTagDefinitionRepository(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher), scope.Scenes()
+			tags := scope.Tags()
+			pinnedTypes := repositories.NewProjectWidgetTypeRepository(sqlDB, rawID)
+			splitTags := application.NewSplitTagService(definitions, processState, rawID)
+			return restapi.ProjectServices{Tags: splitTags, Definitions: splitTags, Scenes: application.NewSplitSceneService(scenes, pinnedTypes, definitions), WidgetTypes: application.NewWidgetTypeService(pinnedTypes, scenes, tags, application.WithWidgetTypeDefinitions(definitions))}
+		}, processState.RemoveProject),
+		restapi.WithLibraries(libraryService, func(libraryID uuid.UUID) application.WidgetTypeService {
+			repo := repositories.NewWidgetTypeRepositoryPostgresInLibrary(sqlDB, libraryID, notifyDispatcher)
+			return application.NewWidgetTypeService(repo, sceneRepository, tagRepository)
+		}))
 	// Register the event hub shutdown handler. The outbox is drained first,
 	// while SSE clients are still connected, so what is left in it reaches
 	// them; a change committed after the drain (the API server stops
@@ -128,10 +195,7 @@ func main() {
 		return nil
 	})
 	// Start HTTP server for API
-	apiServer := &http.Server{
-		Addr:    ":9090",
-		Handler: apiRouter.ServeMux(),
-	}
+	apiServer := httpserver.New(":9090", apiRouter.ServeMux())
 
 	// Register the API server shutdown handler
 	gracedownManager.RegisterInterface("API HTTP Server", 15*time.Second, func(ctx context.Context) error {
@@ -147,13 +211,10 @@ func main() {
 	}()
 
 	// Server for serving the PWA client
-	pwaServer := &http.Server{
-		Addr: ":8080",
-		Handler: &app.Handler{
-			Name:        "GrowSCADA",
-			Description: "SCADA to Go",
-		},
-	}
+	pwaServer := httpserver.New(":8080", &app.Handler{
+		Name:        "GrowSCADA",
+		Description: "SCADA to Go",
+	})
 	// Register the PWA server shutdown handler
 	gracedownManager.RegisterInterface("PWA HTTP Server", 15*time.Second, func(ctx context.Context) error {
 		return pwaServer.Shutdown(ctx)

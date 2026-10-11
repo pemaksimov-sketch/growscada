@@ -1,0 +1,35 @@
+meta {
+  name: update_tag
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{baseURL}}/api/v0/tags/{{tagID}}/value
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "9007199254740993",
+    "quality": "good",
+    "version": 1
+  }
+}
+
+tests {
+  test("update_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("update_tag: response", function () {
+    const body = res.getBody();
+
+    expect(body.version).to.equal(1); expect(body.sequence).to.equal(2);
+  });
+}

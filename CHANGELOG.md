@@ -1,5 +1,38 @@
 # growscada [CHANGELOG](https://keepachangelog.com/en/1.1.0/)
 
+## [Unreleased]
+
+### Changed
+
+- Library Release (task 33): WidgetTypes now belong to organization Libraries, with the seeded public GrowSCADA Library and immutable numbered snapshots. Projects can pin one release per Library; REST, Library/Project screens and the ordered Bruno suite expose and verify these operations. Before changing a pin, Project lists affected Widgets and bound ports. `growctl widget-type apply` reads strict manifest v0.3 documents with an explicit Library UUID. API schema is 0.5.
+
+- Tag definitions and live values now have separate domain models and storage. Engineering owns `engineering.tag_definitions`; Runtime owns `runtime.tags` with per-project value, Quality and sequence. Startup copies legacy values without losing integer precision, and repeat migration preserves live state. `PATCH /tags/{id}/value` no longer checks a definition version; `PUT /tags/{id}/definition` uses optimistic concurrency. Tags and Widgets carry Project/Runtime origin. API schema is 0.4. Project removal also clears Runtime values.
+
+- Project isolation (task 31): API 0.3 adds Project CRUD and `/projects/{project}/tags`, `/scenes` and `/events`. Typed scoped repositories isolate reads, writes, tag names, widget bindings and SSE; existing data migrates to Main in the default Organization. The UI selects/manages projects; growctl accepts `--project`/`GROWCTL_PROJECT` and manifest 0.2 `metadata.project`; simulator YAML accepts `project`. Older unscoped API paths and manifests retain the Main compatibility alias. Library types stay organization-wide until task 33.
+
+- Scene alignment guides (task 41): while moving or resizing, Project shows nearby edges and centers of the canvas and other widgets, including rotated bounds. The Guides toggle is remembered locally. Guides are visual, leave coordinates unchanged and do not intercept pointer input.
+
+- API integration (task 30): `make test_api` builds the server/WASM container and runs 36 ordered Bruno requests against an isolated migrated PostgreSQL database. GitHub and GitVerse workflow definitions invoke the same script; JUnit results and container logs are retained. `DATABASE_DSN` configures the server database, retaining the previous local default.
+
+- Typed UI client (task 23): Project, Library and Operation share `apiclient.Server`, API contract types and a single error-to-toast mapper. An in-memory adapter tests CRUD, optimistic conflicts, draft preservation and selection without a server. HTTP route/header tests and browser CRUD cover the real adapter. With Go 1.26.1, the first refactor build changed WASM from 19,551,181 to 19,514,974 bytes (−36,207 bytes); no API schema change.
+
+### Fixed
+
+- Scene autosave serializes edits and widget writes using the latest successful aggregate version. Unchanged fields do not write, including geometry displayed with lower precision. Background reloads wait for local writes; an external conflict cancels dependent writes and reloads the server state.
+
+- Reliable widget reconciliation (task 21): WidgetType saves no longer synchronously change Scenes. Each reliable policy has its own durable queue and worker; a failed or slow reconciliation retries after restart without blocking Operation SSE or other subscribers. Scene reconciliation remains idempotent and retries CAS races.
+
+- Live UI loading (task 29): Project applies versioned tag values directly from SSE instead of requesting all tags on every value update. Project, Library and Operation share coalesced list loading; editor merges and event routing are separated and tested.
+
+- Tag binding types (task 25): creating or editing a widget rejects missing tags and incompatible port types with 400. Narrowing a WidgetType port hint is rejected before saving when existing bindings are incompatible; widening to any type remains allowed.
+
+- Scoped widget events (task 24): API schema 0.2 exposes the owning `scene_id`; Project and Operation refresh only that scene and, when selected, its widgets. Shared event constants and regression tests keep routing aligned with the API.
+
+- SSE shutdown (task 26): closing the event hub terminates active streams and rejects new connections with 503. Closing, disconnecting and publishing concurrently no longer leaves idle streams waiting for the HTTP shutdown timeout. Connection lifecycle events remain available to other EventBus subscribers.
+- Project scene background (task 27): the editor and Operation share a sandboxed background renderer. The editor grid overlays the background without intercepting pointer input.
+- Exact Integer inputs (task 28): widget inputs expose an additive `raw` string for exact int64 display and BigInt arithmetic while preserving the existing `value` contract.
+- REST error mapping (task 22): handlers share UUID parsing and Problem Details translation; 404 responses identify the resource without exposing repository error wrappers. Name-filtered tag queries still return an empty list when no tag matches.
+
 ## [0.0.34] - 2026-10-07
 
 ### Changed

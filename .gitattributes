@@ -1,0 +1,3 @@
+# Published schema hashes must be stable across Windows and Linux checkouts.
+schemas/** text eol=lf
+*.sh text eol=lf

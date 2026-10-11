@@ -1,189 +1,96 @@
 package library
 
 import (
-	"bytes"
-	"encoding/json"
-	"net/http"
-
-	"github.com/maxence-charriere/go-app/v10/pkg/app"
-
+	"context"
+	"github.com/google/uuid"
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
-	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
-	"github.com/kipitix/growscada/internal/server/interface/ui/uidto"
+	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
+	"github.com/maxence-charriere/go-app/v10/pkg/app"
 )
 
 const defaultHTML = `<div class="widget"></div>`
 const defaultScript = "function update() {\n}"
 
-// ── Widget type CRUD ──────────────────────────────────────────────────────────
-
 func (l *Library) createItem(ctx app.Context) {
-	ctx = l.compoCtx
-	name := "New Widget Type"
-	url := l.apiServerURL + apiv0.PathPrefix + "/widget-types"
-	body, _ := json.Marshal(apiv0.CreateWidgetTypeRequest{
-		Name:           name,
-		HtmlTemplate:   defaultHTML,
-		Script:         defaultScript,
-		ScriptLanguage: "javascript",
-		DefaultWidth:   120,
-		DefaultHeight:  60,
-		InputPorts:     []uidto.InputPortDTO{},
-	})
-	ctx.Async(func() {
-		resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
-		}
-		defer resp.Body.Close()
-
-		var result createWidgetTypeResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
-		}
-
-		newID := result.ID
-		ctx.Dispatch(func(ctx app.Context) {
-			l.selectedID = newID
-			l.editedName = name
-			l.editedHTML = defaultHTML
-			l.editedScript = defaultScript
-			l.editedInputValues = make(map[string]string)
-			l.editedInputPorts = nil
-			l.editedScriptLang = "javascript"
-			l.loadList(ctx)
-		})
-	})
+	input := apiv0.CreateWidgetTypeRequest{Name: "New Widget Type", HtmlTemplate: defaultHTML, Script: defaultScript, ScriptLanguage: "javascript", DefaultWidth: 120, DefaultHeight: 60, InputPorts: []apiv0.InputPort{}}
+	uiutil.Request(l.tasks, func(ctx context.Context) (apiv0.CreateWidgetTypeResponse, error) {
+		return l.createWidgetType(ctx, input)
+	}, func(result apiv0.CreateWidgetTypeResponse) {
+		l.selectedID = result.ID.String()
+		l.tasks.Store("library:selectedID", l.selectedID)
+		l.editedName = input.Name
+		l.editedHTML = input.HtmlTemplate
+		l.editedScript = input.Script
+		l.editedScriptLang = input.ScriptLanguage
+		l.editedInputValues = make(map[string]string)
+		l.editedInputPorts = nil
+		l.loadList(l.compoCtx)
+	}, nil)
 }
-
 func (l *Library) deleteItem(ctx app.Context) {
-	ctx = l.compoCtx
 	if l.selectedID == "" {
 		return
 	}
-	url := l.apiServerURL + apiv0.PathPrefix + "/widget-types/" + l.selectedID
 	deletedID := l.selectedID
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodDelete, url, nil)
-		resp, err := http.DefaultClient.Do(req)
+	uiutil.Request(l.tasks, func(ctx context.Context) (apiv0.WidgetTypeResponse, error) {
+		id, err := uuid.Parse(deletedID)
 		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
+			return apiv0.WidgetTypeResponse{}, err
 		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
+		return l.deleteWidgetType(ctx, id)
+	}, func(apiv0.WidgetTypeResponse) {
+		if l.selectedID == deletedID {
+			l.clearSelection()
+			l.tasks.Store("library:selectedID", "")
 		}
-		resp.Body.Close()
-
-		ctx.Dispatch(func(ctx app.Context) {
-			if l.selectedID == deletedID {
-				l.clearSelection()
-			}
-			l.loadList(ctx)
-		})
-	})
+		l.loadList(l.compoCtx)
+	}, nil)
 }
-
+func updateInput(item widgetTypeItem) apiv0.UpdateWidgetTypeRequest {
+	ports := item.InputPorts
+	if ports == nil {
+		ports = []apiv0.InputPort{}
+	}
+	return apiv0.UpdateWidgetTypeRequest{Name: item.Name, HtmlTemplate: item.HtmlTemplate, Script: item.Script, ScriptLanguage: item.ScriptLanguage, DefaultWidth: item.DefaultWidth, DefaultHeight: item.DefaultHeight, InputPorts: ports, Version: item.Version}
+}
+func (l *Library) updateItem(id uuid.UUID, input apiv0.UpdateWidgetTypeRequest) {
+	uiutil.Request(l.tasks, func(ctx context.Context) (apiv0.UpdateWidgetTypeResponse, error) {
+		return l.updateWidgetType(ctx, id, input)
+	}, func(result apiv0.UpdateWidgetTypeResponse) {
+		for i := range l.widgetTypes {
+			if l.widgetTypes[i].ID == id && l.widgetTypes[i].Version < result.Version {
+				l.widgetTypes[i].Version = result.Version
+			}
+		}
+		l.loadList(l.compoCtx)
+	}, func() { l.loadList(l.compoCtx) })
+}
 func (l *Library) applyChanges(ctx app.Context) {
-	ctx = l.compoCtx
-	if l.selectedID == "" {
+	current, found := l.findItem(l.selectedID)
+	if !found {
 		return
 	}
-	var currentItem widgetTypeItem
-	for _, it := range l.widgetTypes {
-		if it.ID == l.selectedID {
-			currentItem = it
-			break
-		}
-	}
-	url := l.apiServerURL + apiv0.PathPrefix + "/widget-types/" + l.selectedID
-	ports := l.editedInputPorts
-	if ports == nil {
-		ports = []uidto.InputPortDTO{}
-	}
-	body, _ := json.Marshal(apiv0.UpdateWidgetTypeRequest{
-		Name:           l.editedName,
-		HtmlTemplate:   l.editedHTML,
-		Script:         l.editedScript,
-		ScriptLanguage: l.editedScriptLang,
-		DefaultWidth:   currentItem.DefaultWidth,
-		DefaultHeight:  currentItem.DefaultHeight,
-		InputPorts:     ports,
-		Version:        currentItem.Version,
-	})
-	nextVersion := currentItem.Version + 1
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
-		}
-		resp.Body.Close()
-		ctx.Dispatch(func(ctx app.Context) {
-			for i, it := range l.widgetTypes {
-				if it.ID == l.selectedID {
-					l.widgetTypes[i].Version = nextVersion
-					break
-				}
-			}
-			l.loadList(ctx)
-		})
-	})
+	input := updateInput(current)
+	input.Name = l.editedName
+	input.HtmlTemplate = l.editedHTML
+	input.Script = l.editedScript
+	input.ScriptLanguage = l.editedScriptLang
+	input.InputPorts = append([]apiv0.InputPort{}, l.editedInputPorts...)
+	l.updateItem(current.ID, input)
 }
-
 func (l *Library) commitEdit(ctx app.Context) {
-	ctx = l.compoCtx
 	if l.editingID == "" {
 		return
 	}
-	id := l.editingID
-	name := l.editingName
+	id, name := l.editingID, l.editingName
 	l.editingID = ""
 	l.editingName = ""
-
-	var found widgetTypeItem
-	for _, it := range l.widgetTypes {
-		if it.ID == id {
-			found = it
-			break
-		}
-	}
-	if found.ID == "" {
+	found, exists := l.findItem(id)
+	if !exists {
 		return
 	}
-
-	for i, it := range l.widgetTypes {
-		if it.ID == id {
+	for i := range l.widgetTypes {
+		if l.widgetTypes[i].ID == found.ID {
 			l.widgetTypes[i].Name = name
 			break
 		}
@@ -191,39 +98,7 @@ func (l *Library) commitEdit(ctx app.Context) {
 	if l.selectedID == id {
 		l.editedName = name
 	}
-
-	url := l.apiServerURL + apiv0.PathPrefix + "/widget-types/" + id
-	foundPorts := found.InputPorts
-	if foundPorts == nil {
-		foundPorts = []uidto.InputPortDTO{}
-	}
-	body, _ := json.Marshal(apiv0.UpdateWidgetTypeRequest{
-		Name:           name,
-		HtmlTemplate:   found.HtmlTemplate,
-		Script:         found.Script,
-		ScriptLanguage: found.ScriptLanguage,
-		DefaultWidth:   found.DefaultWidth,
-		DefaultHeight:  found.DefaultHeight,
-		InputPorts:     foundPorts,
-		Version:        found.Version,
-	})
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
-		}
-		resp.Body.Close()
-	})
+	input := updateInput(found)
+	input.Name = name
+	l.updateItem(found.ID, input)
 }

@@ -1,0 +1,23 @@
+meta {
+  name: get_tag
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseURL}}/api/v0/tags/{{tagID}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("get_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("get_tag: response", function () {
+    const body = res.getBody();
+
+    expect(body.value).to.equal("2"); expect(body.version).to.equal(1); expect(body.sequence).to.equal(3);
+  });
+}

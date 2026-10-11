@@ -1,0 +1,22 @@
+meta {
+  name: foreign_tag_get
+  type: http
+  seq: 45
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{projectB}}/tags/{{projectTagA}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("foreign_tag_get: status and schema header", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("foreign_tag_get: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(404); expect(body.title).to.be.a("string").and.not.empty;
+  });
+}

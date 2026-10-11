@@ -2,7 +2,6 @@ package restapi
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -52,7 +51,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func NewRouter(tagService application.TagService, widgetTypeService application.WidgetTypeService, sceneService application.SceneService, eventBus eventbus.EventBus, maxSSEClients int) *APIRouter {
+func NewRouter(tagService application.TagService, widgetTypeService application.WidgetTypeService, sceneService application.SceneService, eventBus eventbus.EventBus, maxSSEClients int, opts ...RouterOption) *APIRouter {
 	router := &APIRouter{}
 	router.serveMux = http.NewServeMux()
 
@@ -62,6 +61,7 @@ func NewRouter(tagService application.TagService, widgetTypeService application.
 	router.serveMux.HandleFunc("POST "+apiv0.PathPrefix+"/tags", router.tagsHandlers.PostTags)
 	router.serveMux.HandleFunc("DELETE "+apiv0.PathPrefix+"/tags/{id}", router.tagsHandlers.DeleteTagsByID)
 	router.serveMux.HandleFunc("PATCH "+apiv0.PathPrefix+"/tags/{id}/value", router.tagsHandlers.PatchTagsValue)
+	router.serveMux.HandleFunc("PUT "+apiv0.PathPrefix+"/tags/{id}/definition", router.tagsHandlers.PutTagDefinition)
 
 	router.widgetTypesHandlers = NewWidgetTypesHandler(widgetTypeService)
 	router.serveMux.HandleFunc("GET "+apiv0.PathPrefix+"/widget-types", router.widgetTypesHandlers.GetWidgetTypes)
@@ -86,6 +86,9 @@ func NewRouter(tagService application.TagService, widgetTypeService application.
 
 	router.eventsHandlers = NewEventsHandler(eventBus, maxSSEClients)
 	router.serveMux.HandleFunc("GET "+apiv0.PathPrefix+"/events", router.eventsHandlers.GetEvents)
+	for _, opt := range opts {
+		opt(router)
+	}
 
 	router.serveMux.HandleFunc(preVersioningPathPrefix+"/", preVersioningGone)
 
@@ -102,17 +105,6 @@ func preVersioningGone(w http.ResponseWriter, r *http.Request) {
 	detail := fmt.Sprintf("%s is the server API from before contract versioning: use %s",
 		preVersioningPathPrefix, apiv0.PathPrefix)
 	sendJSONResponse(w, http.StatusGone, NewGone(detail, r.URL.Path))
-}
-
-// sendServiceError responds to an error from the application layer that the
-// handler did not map itself (to 404, 409): invalid input is a 400 naming the
-// cause, anything else a 500.
-func sendServiceError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, application.ErrInvalidInput) {
-		sendJSONResponse(w, http.StatusBadRequest, NewBadRequest(err.Error(), r.URL.Path))
-		return
-	}
-	sendInternalError(w, r, err)
 }
 
 // sendInternalError logs the full error and sends a generic 500 to the client.

@@ -12,6 +12,7 @@ func TestSchemaIsCommitted(t *testing.T) {
 		Title: "GrowSCADA server API " + SchemaVersion().String(),
 		Tag:   "json",
 		Roots: []any{
+			ProjectResponse{}, GetProjectsResponse{}, CreateProjectRequest{}, UpdateProjectRequest{},
 			TagResponse{}, GetTagsResponse{}, CreateTagRequest{}, CreateTagResponse{}, UpdateTagRequest{}, UpdateTagResponse{},
 			SceneResponse{}, GetScenesResponse{}, CreateSceneRequest{}, CreateSceneResponse{}, UpdateSceneRequest{}, UpdateSceneResponse{},
 			WidgetResponse{}, GetWidgetsResponse{}, CreateWidgetRequest{}, CreateWidgetResponse{}, UpdateWidgetRequest{}, UpdateWidgetResponse{},

@@ -1,112 +1,100 @@
 package operation
 
 import (
-	"github.com/maxence-charriere/go-app/v10/pkg/app"
-
+	"context"
+	"errors"
+	"github.com/google/uuid"
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/kipitix/growscada/internal/server/interface/ui/livescene"
-	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
+	"github.com/maxence-charriere/go-app/v10/pkg/app"
 )
 
-// Each server-backed list is (re)loaded through a uiutil.Reloader, on mount,
-// on server events and after a reconnection.
-
 func (o *Operation) loadWidgetTypes(ctx app.Context) {
-	ctx = o.compoCtx
-	if !o.widgetTypesReloader.Start() {
-		return
-	}
-	url := o.apiServerURL + apiv0.PathPrefix + "/widget-types"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getWidgetTypesResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				byID := make(map[string]livescene.WidgetType, len(result.WidgetTypes))
-				for _, wt := range result.WidgetTypes {
-					byID[wt.ID] = wt
-				}
-				o.widgetTypes = byID
+	uiutil.Load(o.tasks, &o.widgetTypesReloader, uiutil.LoadRequest[[]apiv0.WidgetTypeResponse]{
+		Call: func(ctx context.Context) ([]apiv0.WidgetTypeResponse, error) {
+			if api, ok := o.client.(apiclient.LibraryServer); ok {
+				return api.ListProjectWidgetTypes(ctx, o.projectID)
 			}
-			if o.widgetTypesReloader.Done() {
-				o.loadWidgetTypes(ctx)
+			return o.client.ListWidgetTypes(ctx)
+		}, Reload: func() { o.loadWidgetTypes(o.compoCtx) },
+		Apply: func(items []apiv0.WidgetTypeResponse) {
+			byID := make(map[string]livescene.WidgetType, len(items))
+			for _, wt := range items {
+				byID[wt.ID.String()] = wt
 			}
-		})
+			o.widgetTypes = byID
+		},
 	})
 }
-
 func (o *Operation) loadScenes(ctx app.Context) {
-	ctx = o.compoCtx
-	if !o.scenesReloader.Start() {
-		return
-	}
-	url := o.apiServerURL + apiv0.PathPrefix + "/scenes"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getScenesResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				o.scenes = result.Scenes
-				o.selectScene(ctx, selectScene(o.scenes, o.selectedSceneID))
-			}
-			if o.scenesReloader.Done() {
-				o.loadScenes(ctx)
-			}
-		})
+	uiutil.Load(o.tasks, &o.scenesReloader, uiutil.LoadRequest[[]apiv0.SceneResponse]{
+		Call: o.client.ListScenes, Reload: func() { o.loadScenes(o.compoCtx) },
+		Apply: func(items []apiv0.SceneResponse) {
+			o.scenes = items
+			o.selectScene(o.compoCtx, selectScene(items, o.selectedSceneID))
+		},
 	})
 }
-
-// loadWidgets (re)loads the widgets of the selected Scene.
-func (o *Operation) loadWidgets(ctx app.Context) {
-	ctx = o.compoCtx
-	if o.selectedSceneID == "" {
-		o.widgets, o.widgetsSceneID = nil, ""
-		return
+func (o *Operation) loadScene(ctx app.Context, sceneID string) {
+	if o.sceneReloaders == nil {
+		o.sceneReloaders = make(map[string]*uiutil.Reloader)
 	}
-	if !o.widgetsReloader.Start() {
+	r := o.sceneReloaders[sceneID]
+	if r == nil {
+		r = &uiutil.Reloader{}
+		o.sceneReloaders[sceneID] = r
+	}
+	uiutil.Load(o.tasks, r, uiutil.LoadRequest[*apiv0.SceneResponse]{
+		Call: func(ctx context.Context) (*apiv0.SceneResponse, error) {
+			id, err := uuid.Parse(sceneID)
+			if err != nil {
+				return nil, err
+			}
+			sc, err := o.client.GetScene(ctx, id)
+			if errors.Is(err, apiclient.ErrNotFound) {
+				return nil, nil
+			}
+			return &sc, err
+		},
+		Reload: func() { o.loadScene(o.compoCtx, sceneID) },
+		Idle:   func() { delete(o.sceneReloaders, sceneID) },
+		Apply: func(result *apiv0.SceneResponse) {
+			if result == nil {
+				return
+			}
+			for i := range o.scenes {
+				if o.scenes[i].ID == result.ID && result.Version >= o.scenes[i].Version {
+					o.scenes[i] = *result
+					break
+				}
+			}
+		},
+	})
+}
+func (o *Operation) loadWidgets(ctx app.Context) {
+	if o.selectedSceneID == "" {
+		o.widgets = nil
+		o.widgetsSceneID = ""
 		return
 	}
 	sceneID := o.selectedSceneID
-	url := o.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getWidgetsResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			rerun := o.widgetsReloader.Done()
-			switch {
-			case o.selectedSceneID != sceneID:
-				rerun = true // the selection changed meanwhile: load the new Scene
-			case problem != nil:
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			default:
-				o.widgets, o.widgetsSceneID = result.Widgets, sceneID
+	uiutil.Load(o.tasks, &o.widgetsReloader, uiutil.LoadRequest[[]apiv0.WidgetResponse]{
+		Call: func(ctx context.Context) ([]apiv0.WidgetResponse, error) {
+			id, err := uuid.Parse(sceneID)
+			if err != nil {
+				return nil, err
 			}
-			if rerun {
-				o.loadWidgets(ctx)
-			}
-		})
+			return o.client.ListWidgets(ctx, id)
+		},
+		Reload: func() { o.loadWidgets(o.compoCtx) }, Accept: func() bool { return o.selectedSceneID == sceneID },
+		Apply: func(items []apiv0.WidgetResponse) { o.widgets = items; o.widgetsSceneID = sceneID },
 	})
 }
-
 func (o *Operation) loadTags(ctx app.Context) {
-	ctx = o.compoCtx
-	if !o.tagsReloader.Start() {
-		return
-	}
-	url := o.apiServerURL + apiv0.PathPrefix + "/tags"
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[getTagsResponse](url)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				ctx.NewActionWithValue(toast.ActionAdd, *problem)
-			} else {
-				o.tags = mergeTags(o.tags, result.Tags)
-			}
-			if o.tagsReloader.Done() {
-				o.loadTags(ctx)
-			}
-		})
+	uiutil.Load(o.tasks, &o.tagsReloader, uiutil.LoadRequest[[]apiv0.TagResponse]{
+		Call: o.client.ListTags, Reload: func() { o.loadTags(o.compoCtx) },
+		Apply: func(items []apiv0.TagResponse) { o.tags = mergeTags(o.tags, items) },
 	})
 }

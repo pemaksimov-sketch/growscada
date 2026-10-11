@@ -1,0 +1,21 @@
+meta {
+  name: project_type_survives_draft_update
+  type: http
+  seq: 23
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/00000000-0000-4000-8000-000000000001/widget-types
+  body: none
+  auth: none
+}
+
+tests {
+  test("project_type_survives_draft_update: released type remains available", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+    const type = res.getBody().widget_types.find(item => item.id === bru.getVar("typeID"));
+    expect(type).to.exist;
+    expect(type.version).to.equal(1);
+  });
+}

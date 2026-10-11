@@ -1,0 +1,22 @@
+meta {
+  name: project_name_lookup
+  type: http
+  seq: 48
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}/tags?name=ci.project.counter
+  body: none
+  auth: none
+}
+
+tests {
+  test("project_name_lookup: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("project_name_lookup: response", function () {
+    const body = res.getBody();
+    expect(body.tags).to.have.length(1); expect(body.tags[0].id).to.equal(bru.getVar("projectTagA"));
+  });
+}

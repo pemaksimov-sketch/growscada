@@ -1,0 +1,19 @@
+meta {
+  name: project_keeps_released_type
+  type: http
+  seq: 86
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{mainProject}}/widget-types
+  body: none
+  auth: none
+}
+
+tests {
+  test("project_keeps_released_type: draft deletion leaves pinned snapshot intact", function () {
+    expect(res.getStatus()).to.equal(200);
+    const type = res.getBody().widget_types.find(item => item.id === bru.getVar("typeID"));
+    expect(type).to.exist;
+  });
+}

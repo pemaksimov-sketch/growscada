@@ -1,13 +1,18 @@
 package root
 
 import (
+	"github.com/google/uuid"
+	apiv0 "github.com/kipitix/growscada/contract/api/v0"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/kipitix/growscada/internal/server/interface/ui/eventlog"
 	"github.com/kipitix/growscada/internal/server/interface/ui/history"
 	"github.com/kipitix/growscada/internal/server/interface/ui/library"
 	"github.com/kipitix/growscada/internal/server/interface/ui/operation"
 	"github.com/kipitix/growscada/internal/server/interface/ui/project"
 	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
+	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
+	"net/http"
 )
 
 type Mode string
@@ -22,20 +27,36 @@ const (
 
 type Root struct {
 	app.Compo
-	currentMode  Mode
-	themeMode    string // "auto" | "light" | "dark"
-	apiServerURL string
+	currentMode       Mode
+	themeMode         string // "auto" | "light" | "dark"
+	apiServerURL      string
+	client            *apiclient.Client
+	tasks             uiutil.Tasks
+	projects          []apiv0.ProjectResponse
+	selectedProjectID uuid.UUID
+	projectsLoading   bool
 }
 
 func NewRoot(anAPIServerURL string) *Root {
 	return &Root{
-		currentMode:  ModeLibrary,
-		themeMode:    "auto",
-		apiServerURL: anAPIServerURL,
+		currentMode:       ModeLibrary,
+		themeMode:         "auto",
+		apiServerURL:      anAPIServerURL,
+		client:            apiclient.New(anAPIServerURL, http.DefaultClient),
+		selectedProjectID: uuid.MustParse(apiv0.MainProjectID),
+		projectsLoading:   true,
 	}
 }
 
 func (r *Root) OnMount(ctx app.Context) {
+	r.tasks = uiutil.BrowserTasks(ctx)
+	var savedProject string
+	ctx.LocalStorage().Get("root:projectID", &savedProject)
+	if projectID, err := uuid.Parse(savedProject); err == nil && projectID != uuid.Nil {
+		r.selectedProjectID = projectID
+	}
+	r.loadProjects()
+	r.observeProjectEvents(ctx)
 	ctx.Page().SetTitle("GrowSCADA")
 
 	injectToastCSS()
@@ -245,6 +266,7 @@ func (r *Root) Render() app.UI {
 					r.tab("Project", ModeProject),
 					r.tab("Operation", ModeOperation),
 					r.tab("History", ModeHistory),
+					r.renderProjectPicker(),
 					app.Div().Style("flex", "1"),
 					r.renderThemeToggle(),
 				),
@@ -256,17 +278,19 @@ func (r *Root) Render() app.UI {
 				Style("box-sizing", "border-box").
 				Style("background", "var(--bg)").
 				Body(
-					app.If(r.currentMode == ModeLibrary, func() app.UI {
+					app.If(r.projectsLoading, func() app.UI { return app.Div().Text("Loading projects…") }).ElseIf(r.currentMode == ModeLibrary, func() app.UI {
 						return library.NewLibrary(r.apiServerURL)
+					}).ElseIf(r.selectedProjectID == uuid.Nil, func() app.UI {
+						return app.Div().Text("Create a project to begin.")
 					}).ElseIf(r.currentMode == ModeProject, func() app.UI {
-						return project.NewProject(r.apiServerURL)
+						return project.NewProject(r.apiServerURL, r.selectedProjectID)
 					}).ElseIf(r.currentMode == ModeOperation, func() app.UI {
-						return operation.NewOperation(r.apiServerURL)
+						return operation.NewOperation(r.apiServerURL, r.selectedProjectID)
 					}).Else(func() app.UI {
 						return &history.History{}
 					}),
 				),
-			eventlog.NewBar(r.apiServerURL),
+			app.If(!r.projectsLoading && r.selectedProjectID != uuid.Nil, func() app.UI { return eventlog.NewBar(r.apiServerURL, r.selectedProjectID) }),
 		)
 }
 

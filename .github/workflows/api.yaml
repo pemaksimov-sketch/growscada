@@ -1,0 +1,25 @@
+name: API integration
+on:
+  workflow_dispatch:
+  push:
+    branches: [path, 'codex/**']
+  pull_request:
+    branches: [path]
+permissions:
+  contents: read
+concurrency:
+  group: api-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  bruno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Build container and run Bruno integration tests
+        run: make test_api
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-checks
+          path: artifacts/api/
+          if-no-files-found: warn

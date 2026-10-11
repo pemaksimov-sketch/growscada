@@ -14,7 +14,7 @@ func (p *Project) renderWidgetTypePanel() app.UI {
 	bg := uiutil.IframeBgColor()
 	items := make([]app.UI, len(p.widgetTypes))
 	for i, wt := range p.widgetTypes {
-		id := wt.ID
+		id := wt.ID.String()
 		name := wt.Name
 
 		defaultW := wt.DefaultWidth
@@ -84,6 +84,7 @@ func (p *Project) renderWidgetTypePanel() app.UI {
 		}
 
 		items[i] = app.Div().
+			Attr("data-widget-type-id", id).
 			Style("padding", "6px").
 			Style("margin-bottom", "6px").
 			Style("border", "1px solid var(--border-input)").

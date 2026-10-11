@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -48,7 +49,8 @@ type Dispatcher struct {
 
 	// mu makes DrainOnce calls take turns, so no row is delivered twice by
 	// one process.
-	mu sync.Mutex
+	mu       sync.Mutex
+	policies []*policy
 }
 
 // DispatcherOption configures a Dispatcher.
@@ -87,6 +89,11 @@ func (d *Dispatcher) Notify() {
 // every poll interval, and soon again while rows wait for an older
 // transaction. An error is logged and retried on the next round.
 func (d *Dispatcher) Run(ctx context.Context) {
+	var workers sync.WaitGroup
+	for _, p := range d.policies {
+		workers.Go(func() { d.runPolicy(ctx, p) })
+	}
+	defer workers.Wait()
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
 	for {
@@ -114,8 +121,32 @@ func (d *Dispatcher) Run(ctx context.Context) {
 // it does not hold back the rest. Once ctx is done no further row is
 // delivered, but the delivered ones are still deleted.
 func (d *Dispatcher) DrainOnce(ctx context.Context) (int, error) {
-	delivered, _, err := d.drain(ctx)
-	return delivered, err
+	delivered := 0
+	for {
+		n, _, err := d.drain(ctx)
+		delivered += n
+		if err != nil {
+			return delivered, err
+		}
+		processed := 0
+		var policyErr error
+		for _, p := range d.policies {
+			n, err := d.drainPolicy(ctx, p)
+			processed += n
+			if err != nil {
+				policyErr = errors.Join(policyErr, fmt.Errorf("policy %s: %w", p.name, err))
+			}
+		}
+		// A successful prefix may itself have committed Scene events, even
+		// if a later Scene failed. Deliver those before returning the failure.
+		if policyErr != nil {
+			n, _, err := d.drain(ctx)
+			return delivered + n, errors.Join(policyErr, err)
+		}
+		if processed == 0 {
+			return delivered, nil
+		}
+	}
 }
 
 // drain is DrainOnce that also reports whether rows were left waiting for an
@@ -138,6 +169,9 @@ func (d *Dispatcher) drain(ctx context.Context) (delivered int, heldBack bool, e
 			if err != nil {
 				slog.Error("dropping undeliverable outbox row", "seq", row.seq, "type", row.eventType, "error", err)
 			} else {
+				if err := d.enqueuePolicies(ctx, row, e); err != nil {
+					return delivered, false, errors.Join(err, d.deleteRows(ctx, done))
+				}
 				d.deliver(e)
 				delivered++
 			}
@@ -173,6 +207,7 @@ type outboxRow struct {
 	seq       int64
 	eventType string
 	payload   []byte
+	projectID sql.NullString
 }
 
 func (row outboxRow) decode() (event.Event, error) {
@@ -180,7 +215,7 @@ func (row outboxRow) decode() (event.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Decode(eventType, row.payload)
+	return decodeScoped(eventType, row.payload, row.projectID.String)
 }
 
 // readBatch reads the oldest committed rows up to the first one held back:
@@ -189,7 +224,7 @@ func (row outboxRow) decode() (event.Event, error) {
 // tx_id, so every row after a held back one is held back too.
 func (d *Dispatcher) readBatch(ctx context.Context) (batch []outboxRow, heldBack bool, err error) {
 	rows, err := d.db.QueryContext(ctx,
-		`SELECT seq, type, payload, tx_id < pg_snapshot_xmin(pg_current_snapshot())
+		`SELECT seq, type, payload, project_id, tx_id < pg_snapshot_xmin(pg_current_snapshot())
 		 FROM outbox ORDER BY tx_id, seq LIMIT $1`, batchSize)
 	if err != nil {
 		return nil, false, fmt.Errorf("cannot read outbox: %w", err)
@@ -199,7 +234,7 @@ func (d *Dispatcher) readBatch(ctx context.Context) (batch []outboxRow, heldBack
 	for rows.Next() {
 		var row outboxRow
 		var ready bool
-		if err := rows.Scan(&row.seq, &row.eventType, &row.payload, &ready); err != nil {
+		if err := rows.Scan(&row.seq, &row.eventType, &row.payload, &row.projectID, &ready); err != nil {
 			return nil, false, fmt.Errorf("cannot scan outbox row: %w", err)
 		}
 		if !ready {

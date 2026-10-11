@@ -1,0 +1,34 @@
+meta {
+  name: foreign_tag_write
+  type: http
+  seq: 46
+}
+
+patch {
+  url: {{baseURL}}/api/v0/projects/{{projectB}}/tags/{{projectTagA}}/value
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "value": "42",
+    "quality": "good",
+    "version": 1
+  }
+}
+
+tests {
+  test("foreign_tag_write: status and schema header", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("foreign_tag_write: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(404); expect(body.title).to.be.a("string").and.not.empty;
+  });
+}

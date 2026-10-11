@@ -1,0 +1,28 @@
+meta {
+  name: pin_library_release
+  type: http
+  seq: 81
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects/{{mainProject}}/libraries
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "library_id": "{{testLibraryID}}",
+    "release_id": "{{testLibraryReleaseID}}"
+  }
+}
+
+tests {
+  test("pin_library_release: accepted", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}

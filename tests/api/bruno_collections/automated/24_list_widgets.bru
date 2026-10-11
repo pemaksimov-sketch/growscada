@@ -1,0 +1,23 @@
+meta {
+  name: list_widgets
+  type: http
+  seq: 26
+}
+
+get {
+  url: {{baseURL}}/api/v0/scenes/{{sceneID}}/widgets
+  body: none
+  auth: none
+}
+
+tests {
+  test("list_widgets: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("list_widgets: response", function () {
+    const body = res.getBody();
+
+    expect(body.widgets).to.have.length(1); expect(body.widgets[0].scene_version).to.equal(4); expect(body.widgets[0].position.x).to.equal(40);
+  });
+}

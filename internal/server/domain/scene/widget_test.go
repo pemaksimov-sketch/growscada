@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kipitix/growscada/internal/server/domain/entityorigin"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
@@ -48,6 +49,9 @@ func TestNewWidget_FieldsAreSet(t *testing.T) {
 	if w.ID() != wID {
 		t.Errorf("ID mismatch: expected %v, got %v", wID, w.ID())
 	}
+	if w.EntityOrigin() != entityorigin.Project {
+		t.Fatalf("default operational origin: got %s", w.EntityOrigin())
+	}
 	if w.Name() != name {
 		t.Errorf("Name mismatch: expected %v, got %v", name, w.Name())
 	}
@@ -68,6 +72,15 @@ func TestNewWidget_FieldsAreSet(t *testing.T) {
 	}
 	if len(w.PortBindings()) != 1 {
 		t.Errorf("expected 1 port binding, got %d", len(w.PortBindings()))
+	}
+}
+
+func TestNewWidgetWithEntityOrigin_Runtime(t *testing.T) {
+	name, _ := NewWidgetName("runtime_widget")
+	typeID := id.NewID[library.WidgetType]()
+	w := NewWidgetWithEntityOrigin(id.NewID[Widget](), name, NewPosition(0, 0, 0), library.DefaultSize(), DefaultOrigin(), DefaultRotation(), typeID, nil, nil, entityorigin.Runtime)
+	if w.EntityOrigin() != entityorigin.Runtime {
+		t.Fatalf("operational origin: got %s, want Runtime", w.EntityOrigin())
 	}
 }
 

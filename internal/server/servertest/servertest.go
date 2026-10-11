@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/google/uuid"
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/kipitix/growscada/internal/server/application"
+	"github.com/kipitix/growscada/internal/server/domain/event"
+	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -86,7 +90,7 @@ func startPostgres(ctx context.Context) (*sql.DB, *tcpostgres.PostgresContainer,
 		container.Terminate(ctx)
 		return nil, nil, err
 	}
-	if err := goose.Up(db, migrationsDir); err != nil {
+	if err := goose.UpTo(db, migrationsDir, 20261011010000); err != nil {
 		db.Close()
 		container.Terminate(ctx)
 		return nil, nil, fmt.Errorf("migrations: %w", err)
@@ -107,22 +111,39 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 	dispatcher := outbox.NewDispatcher(db, bus.Publish)
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() {
-		dispatcher.Run(ctx)
-		close(done)
-	}()
 	t.Cleanup(func() {
 		stop()
 		<-done
 	})
 	onCommit := repositories.NotifyOnCommit(dispatcher.Notify)
 
-	tagSvc := application.NewTagService(repositories.NewTagRepositoryPostgres(db, onCommit))
+	tagRepo := repositories.NewTagRepositoryPostgres(db, onCommit)
+	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(db, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(db, onCommit)
-	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo)
-	sceneSvc := application.NewSceneService(sceneRepo, wtRepo)
-	router := restapi.NewRouter(tagSvc, wtSvc, sceneSvc, bus, 100)
+	projectRepo := repositories.NewProjectRepositoryPostgres(db, project.DefaultOrganizationID(), onCommit)
+	projectSvc := application.NewProjectService(projectRepo, project.DefaultOrganizationID())
+	bindingScopes := func(ctx context.Context) ([]application.WidgetBindingScope, error) {
+		projects, err := projectRepo.FindAll(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]application.WidgetBindingScope, len(projects))
+		for i, p := range projects {
+			scope := repositories.ForProject(db, p.ID(), onCommit)
+			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: application.NewLegacyTagTypeLookup(scope.Tags())}
+		}
+		return result, nil
+	}
+	policy := application.NewProjectWidgetReconciliationPolicy(wtRepo, bindingScopes)
+	dispatcher.RegisterPolicy("reconcile-widget-bindings", event.EventTypeWidgetTypeUpdated, policy.Handle)
+	go func() { dispatcher.Run(ctx); close(done) }()
+	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, tagRepo, application.WithWidgetTypeScopes(bindingScopes))
+	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, tagRepo)
+	router := restapi.NewRouter(tagSvc, wtSvc, sceneSvc, bus, 100, restapi.WithProjects(projectSvc, func(rawID uuid.UUID) restapi.ProjectServices {
+		scope := repositories.ForProject(db, id.NewID(id.IDWithUUID[project.Project](rawID)), onCommit)
+		return restapi.ProjectServices{Tags: application.NewTagService(scope.Tags()), Scenes: application.NewSceneService(scope.Scenes(), wtRepo, scope.Tags())}
+	}))
 
 	srv := httptest.NewServer(router.ServeMux())
 	t.Cleanup(srv.Close)

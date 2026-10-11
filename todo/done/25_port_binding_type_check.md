@@ -1,0 +1,16 @@
+# Проверка типа тега при привязке к порту виджета
+
+Сервер не проверяет, что тип привязанного тега подходит под `PortTypeHint` порта. `SceneService.validateWidgetType` сверяет только имя порта с объявленными у WidgetType. Правило типа есть в UI только как фильтр выпадающего списка (`render_properties.go`), поэтому через REST можно привязать тег `string` к порту с подсказкой `integer`. Доменное правило уже есть — `PortTypeHint.Accepts(t)`, но в production-коде оно не вызывается.
+
+- Передать в `SceneService` репозиторий тегов (`tag.TagRepository`, проводка в `main.go`).
+- В `validateWidgetType` для каждой привязки загружать тег и проверять `port.TypeHint().Accepts(tag.Type())`; при несовпадении — `invalidInput(...)` (`application.ErrInvalidInput`), как для необъявленного порта. Несуществующий тег — тоже ошибка валидации.
+- Решить, что делать при смене `type_hint` порта у WidgetType, если на порт уже есть привязки к тегам неподходящего типа: удалять их, как `removeOrphanedPortBindings` удаляет привязки к исчезнувшим портам, или отклонять изменение WidgetType.
+- UI-фильтр можно оставить строковым сравнением (граница WASM/DTO), но смысл должен совпадать с `Accepts`: `""` — любой тип.
+- Тесты application-слоя на несовпадение типа и на смену `type_hint`; запись в `CHANGELOG.md`.
+- Код ответа на невалидную привязку — в рамках задачи 18 (400 вместо 500).
+- Появилось в ходе ревью задачи 13.
+
+
+## Comments
+
+- 2026-10-11: реализация проверена на коммите cb34cee: make test, make build, SSE race и браузерные проверки — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443245. Контейнерные API-тесты — https://github.com/pemaksimov-sketch/growscada/actions/runs/38134443254.

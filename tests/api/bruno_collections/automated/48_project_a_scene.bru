@@ -1,0 +1,35 @@
+meta {
+  name: project_a_scene
+  type: http
+  seq: 50
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}/scenes
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI scoped scene",
+    "width": 800,
+    "height": 600,
+    "background_html": ""
+  }
+}
+
+tests {
+  test("project_a_scene: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("project_a_scene: response", function () {
+    const body = res.getBody();
+    bru.setVar("projectSceneA",body.id);
+  });
+}

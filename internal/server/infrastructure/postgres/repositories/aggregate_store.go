@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/google/uuid"
 
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
@@ -37,11 +38,13 @@ func newOptions(opts []Option) options {
 // (ADR 0008): one transaction writes the aggregate's row, compare-and-swap on
 // the Version it was read at, and the events it recorded into the outbox.
 type aggregateStore[T any] struct {
-	db       *sql.DB
-	table    tableName
-	notFound error
-	conflict error
-	onCommit func()
+	db          *sql.DB
+	table       tableName
+	notFound    error
+	conflict    error
+	onCommit    func()
+	scopeColumn string
+	scopeID     uuid.UUID
 }
 
 // rowWrite writes an aggregate's rows in a Save's transaction.
@@ -76,7 +79,7 @@ func (s aggregateStore[T]) save(ctx context.Context, anID id.ID[T], current vers
 			return err
 		}
 		if !found {
-			return classifyUpdateConflict(ctx, tx, s.table, anID, s.notFound, s.conflict)
+			return s.classifyConflict(ctx, tx, anID)
 		}
 		return nil
 	})
@@ -106,6 +109,10 @@ func (s aggregateStore[T]) deleteWhere(ctx context.Context, anID id.ID[T], curre
 			query += ` AND version = $2`
 			args = append(args, current.Number())
 		}
+		if s.scopeColumn != "" {
+			query += fmt.Sprintf(" AND %s = $%d", s.scopeColumn, len(args)+1)
+			args = append(args, s.scopeID)
+		}
 		res, err := tx.ExecContext(ctx, query, args...)
 		if err != nil {
 			return fmt.Errorf("cannot delete from %s: %w", s.table, err)
@@ -115,7 +122,7 @@ func (s aggregateStore[T]) deleteWhere(ctx context.Context, anID id.ID[T], curre
 			return fmt.Errorf("cannot get rows affected on delete: %w", err)
 		}
 		if n != 1 {
-			return classifyUpdateConflict(ctx, tx, s.table, anID, s.notFound, s.conflict)
+			return s.classifyConflict(ctx, tx, anID)
 		}
 		return nil
 	})
@@ -133,7 +140,11 @@ func (s aggregateStore[T]) inTx(ctx context.Context, events []event.Event, write
 	if err := write(tx); err != nil {
 		return err
 	}
-	if err := outbox.Append(ctx, tx, events); err != nil {
+	var projectID *uuid.UUID
+	if s.scopeColumn == "project_id" {
+		projectID = &s.scopeID
+	}
+	if err := outbox.AppendProject(ctx, tx, events, projectID); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -143,4 +154,19 @@ func (s aggregateStore[T]) inTx(ctx context.Context, events []event.Event, write
 		s.onCommit()
 	}
 	return nil
+}
+
+func (s aggregateStore[T]) classifyConflict(ctx context.Context, tx *sql.Tx, anID id.ID[T]) error {
+	if s.scopeColumn == "" {
+		return classifyUpdateConflict(ctx, tx, s.table, anID, s.notFound, s.conflict)
+	}
+	var exists bool
+	err := tx.QueryRowContext(ctx, fmt.Sprintf("SELECT EXISTS(SELECT 1 FROM %s WHERE id=$1 AND %s=$2)", s.table, s.scopeColumn), anID.UUID(), s.scopeID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return s.notFound
+	}
+	return s.conflict
 }

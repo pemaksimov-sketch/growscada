@@ -1,0 +1,45 @@
+meta {
+  name: draft_type_can_narrow_after_release
+  type: http
+  seq: 62
+}
+
+put {
+  url: {{baseURL}}/api/v0/libraries/00000000-0000-4000-8000-000000000003/widget-types/{{projectType}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI projects type",
+    "html_template": "",
+    "script": "",
+    "script_language": "javascript",
+    "default_width": 100,
+    "default_height": 50,
+    "input_ports": [
+      {
+        "name": "n",
+        "description": "Counter",
+        "type_hint": "string"
+      }
+    ],
+    "version": 1
+  }
+}
+
+tests {
+  test("draft_type_can_narrow_after_release: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("draft_type_can_narrow_after_release: updated library draft", function () {
+    const body = res.getBody();
+    expect(body.version).to.equal(2);
+  });
+}

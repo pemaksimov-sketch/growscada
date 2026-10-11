@@ -18,12 +18,14 @@ const (
 
 // TagResponse is the HTTP DTO for representing a tag in API responses.
 type TagResponse struct {
-	ID      uuid.UUID `json:"id"`
-	Name    string    `json:"name"`
-	Type    string    `json:"type"`
-	Value   string    `json:"value"`
-	Quality string    `json:"quality"`
-	Version int       `json:"version"`
+	Origin   string    `json:"origin,omitempty"`
+	Sequence int64     `json:"sequence,omitempty"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Type     string    `json:"type"`
+	Value    string    `json:"value"`
+	Quality  string    `json:"quality"`
+	Version  int       `json:"version"`
 }
 
 // GetTagsResponse is the HTTP DTO for a list of tags response.
@@ -45,14 +47,22 @@ type CreateTagResponse struct {
 }
 
 // UpdateTagRequest is the HTTP DTO for a tag value update request.
-// Version must match the current persisted version for optimistic locking.
+// Runtime writes do not accept an expected configuration Version. The legacy
+// optional field is tolerated during migration and ignored by the server.
 type UpdateTagRequest struct {
 	Value   string `json:"value"`
 	Quality string `json:"quality"`
-	Version int    `json:"version"`
+	Version int    `json:"version,omitempty"`
 }
 
 // UpdateTagResponse is the HTTP DTO for a tag value update response.
 type UpdateTagResponse struct {
-	Version int `json:"version"`
+	Version  int   `json:"version"`
+	Sequence int64 `json:"sequence"`
+}
+
+// UpdateTagDefinitionRequest edits configuration with optimistic concurrency.
+type UpdateTagDefinitionRequest struct {
+	Name    string `json:"name"`
+	Version int    `json:"version"`
 }

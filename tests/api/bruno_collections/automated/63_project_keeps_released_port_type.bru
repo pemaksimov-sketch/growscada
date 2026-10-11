@@ -1,0 +1,20 @@
+meta {
+  name: project_keeps_released_port_type
+  type: http
+  seq: 63
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{projectB}}/widget-types
+  body: none
+  auth: none
+}
+
+tests {
+  test("project_keeps_released_port_type: pinned definition is unchanged", function () {
+    expect(res.getStatus()).to.equal(200);
+    const type = res.getBody().widget_types.find(item => item.id === bru.getVar("projectType"));
+    expect(type).to.exist;
+    expect(type.input_ports[0].type_hint).to.equal("integer");
+  });
+}

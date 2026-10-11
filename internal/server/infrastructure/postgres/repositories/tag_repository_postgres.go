@@ -8,25 +8,33 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/domain/version"
 )
 
 type tagRepositoryPostgresImpl struct {
-	db    *sql.DB
-	store aggregateStore[tag.Tag]
+	db        *sql.DB
+	store     aggregateStore[tag.Tag]
+	projectID id.ID[project.Project]
 }
 
 var _ tag.TagRepository = (*tagRepositoryPostgresImpl)(nil)
 
 func NewTagRepositoryPostgres(aDb *sql.DB, opts ...Option) tag.TagRepository {
+	return newProjectTagRepository(aDb, project.MainID(), opts...)
+}
+
+func newProjectTagRepository(aDb *sql.DB, projectID id.ID[project.Project], opts ...Option) tag.TagRepository {
 	o := newOptions(opts)
 	return &tagRepositoryPostgresImpl{
-		db: aDb,
+		db:        aDb,
+		projectID: projectID,
 		store: aggregateStore[tag.Tag]{
 			db: aDb, table: tableNameTags,
 			notFound: tag.ErrTagNotFound, conflict: tag.ErrTagConflict,
-			onCommit: o.onCommit,
+			onCommit:    o.onCommit,
+			scopeColumn: "project_id", scopeID: projectID.UUID(),
 		},
 	}
 }
@@ -39,10 +47,10 @@ func (r tagRepositoryPostgresImpl) Save(ctx context.Context, aTag tag.Tag) (tag.
 	saved, err := r.store.save(ctx, aTag.ID(), aTag.Version(), aTag.PendingEvents(), rowWrite[tag.Tag]{
 		insert: func(tx *sql.Tx, next version.Version[tag.Tag]) error {
 			_, err := tx.ExecContext(ctx,
-				`INSERT INTO tags (id, name, type, value, quality, version)
-				VALUES ($1, $2, $3, $4, $5, $6)`,
+				`INSERT INTO tags (id, name, type, value, quality, version, project_id)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 				aTag.ID().UUID(), aTag.Name().String(), aTag.Type().String(),
-				aTag.Value().String(), aTag.Quality().String(), next.Number(),
+				aTag.Value().String(), aTag.Quality().String(), next.Number(), r.projectID.UUID(),
 			)
 			return tagWriteError("insert new tag", err)
 		},
@@ -50,9 +58,9 @@ func (r tagRepositoryPostgresImpl) Save(ctx context.Context, aTag tag.Tag) (tag.
 			res, err := tx.ExecContext(ctx,
 				`UPDATE tags
 				 SET name = $1, type = $2, value = $3, quality = $4, version = $5
-				 WHERE id = $6 AND version = $7`,
+				 WHERE id = $6 AND version = $7 AND project_id = $8`,
 				aTag.Name().String(), aTag.Type().String(), aTag.Value().String(),
-				aTag.Quality().String(), next.Number(), aTag.ID().UUID(), current.Number(),
+				aTag.Quality().String(), next.Number(), aTag.ID().UUID(), current.Number(), r.projectID.UUID(),
 			)
 			if err != nil {
 				return false, tagWriteError("update tag", err)
@@ -90,15 +98,15 @@ func (r tagRepositoryPostgresImpl) Delete(ctx context.Context, aTag tag.Tag) err
 
 func (r tagRepositoryPostgresImpl) FindByID(ctx context.Context, tagID id.ID[tag.Tag]) (tag.Tag, error) {
 	return r.scanTag(r.db.QueryRowContext(ctx,
-		`SELECT id, name, type, value, quality, version FROM tags WHERE id = $1`,
-		tagID.UUID(),
+		`SELECT id, name, type, value, quality, version FROM tags WHERE id = $1 AND project_id = $2`,
+		tagID.UUID(), r.projectID.UUID(),
 	))
 }
 
 func (r tagRepositoryPostgresImpl) FindByName(ctx context.Context, aName tag.TagName) (tag.Tag, error) {
 	return r.scanTag(r.db.QueryRowContext(ctx,
-		`SELECT id, name, type, value, quality, version FROM tags WHERE name = $1`,
-		aName.String(),
+		`SELECT id, name, type, value, quality, version FROM tags WHERE name = $1 AND project_id = $2`,
+		aName.String(), r.projectID.UUID(),
 	))
 }
 
@@ -126,7 +134,7 @@ func (r tagRepositoryPostgresImpl) scanTag(row *sql.Row) (tag.Tag, error) {
 
 func (r tagRepositoryPostgresImpl) FindAll(ctx context.Context) ([]tag.Tag, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, name, type, value, quality, version FROM tags ORDER BY name`,
+		`SELECT id, name, type, value, quality, version FROM tags WHERE project_id = $1 ORDER BY name`, r.projectID.UUID(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error querying tags: %w", err)

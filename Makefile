@@ -33,6 +33,10 @@ db_down:
 test:
 	go test --cover ./...
 
+.PHONY: test_api
+test_api:
+	bash tests/api/run.sh
+
 bench:
 	go test -run=^$ -bench=. -benchmem ./...
 

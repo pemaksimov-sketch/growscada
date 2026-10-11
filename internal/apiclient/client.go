@@ -1,5 +1,5 @@
 // Package apiclient is a Go client of the GrowSCADA REST API, shared by the
-// tools that talk to the server from outside (growctl, the device simulator).
+// PWA, growctl and the device simulator.
 package apiclient
 
 import (
@@ -29,8 +29,12 @@ var (
 // StatusError is a response with an unexpected HTTP status. Its message names
 // the request, so a server URL pointing at the wrong place is easy to spot.
 type StatusError struct {
-	Status int
-	msg    string
+	Status   int
+	Title    string
+	Detail   string
+	Instance string
+	Method   string
+	msg      string
 }
 
 func (e *StatusError) Error() string { return e.msg }
@@ -47,25 +51,50 @@ func (e *StatusError) Is(target error) bool {
 }
 
 // Tag is a tag as the server reports it.
-type Tag struct {
-	ID      uuid.UUID
-	Name    string
-	Type    string
-	Value   string
-	Quality string
-	Version int
-}
+type Tag = apiv0.TagResponse
 
 // Client talks to the GrowSCADA REST API.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL     string
+	httpClient  *http.Client
+	projectID   uuid.UUID
+	bearerToken string
 }
 
 // New creates a client for the server at baseURL (e.g. http://localhost:9090).
 func New(baseURL string, httpClient *http.Client) *Client {
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient}
 }
+
+// ForProject returns an independent client sharing only the HTTP transport.
+// Shared organization library paths remain global; tags/scenes/events are scoped.
+func (c *Client) ForProject(projectID uuid.UUID) *Client {
+	scoped := *c
+	scoped.projectID = projectID
+	return &scoped
+}
+
+// WithBearerToken returns an independent client that authenticates requests
+// with a bearer token. The token is kept out of URLs and request bodies.
+func (c *Client) WithBearerToken(token string) *Client {
+	secured := *c
+	secured.bearerToken = token
+	return &secured
+}
+func (c *Client) ProjectID() uuid.UUID { return c.projectID }
+func (c *Client) scopedPath(path string) string {
+	if c.projectID == uuid.Nil {
+		return path
+	}
+	resource := strings.TrimPrefix(path, apiv0.PathPrefix)
+	for _, name := range []string{"/tags", "/scenes", "/events"} {
+		if resource == name || strings.HasPrefix(resource, name+"/") || strings.HasPrefix(resource, name+"?") {
+			return apiv0.PathPrefix + "/projects/" + c.projectID.String() + resource
+		}
+	}
+	return path
+}
+func (c *Client) EventsURL() string { return c.baseURL + c.scopedPath(apiv0.PathPrefix+"/events") }
 
 // ListTags returns every tag on the server.
 func (c *Client) ListTags(ctx context.Context) ([]Tag, error) {
@@ -102,7 +131,7 @@ func (c *Client) GetTag(ctx context.Context, id uuid.UUID) (Tag, error) {
 	if err := c.do(ctx, http.MethodGet, apiv0.PathPrefix+"/tags/"+id.String(), nil, http.StatusOK, &resp); err != nil {
 		return Tag{}, err
 	}
-	return newTag(resp), nil
+	return resp, nil
 }
 
 // CreateTag creates a tag.
@@ -139,15 +168,7 @@ func (c *Client) getTags(ctx context.Context, path string) ([]Tag, error) {
 	if err := c.do(ctx, http.MethodGet, path, nil, http.StatusOK, &resp); err != nil {
 		return nil, err
 	}
-	tags := make([]Tag, len(resp.Tags))
-	for i, t := range resp.Tags {
-		tags[i] = newTag(t)
-	}
-	return tags, nil
-}
-
-func newTag(t apiv0.TagResponse) Tag {
-	return Tag{ID: t.ID, Name: t.Name, Type: t.Type, Value: t.Value, Quality: t.Quality, Version: t.Version}
+	return resp.Tags, nil
 }
 
 // do sends a request and decodes a successful JSON response into out (if not nil).
@@ -157,7 +178,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, wantS
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+c.scopedPath(path), reader)
 	if err != nil {
 		return err
 	}
@@ -165,6 +186,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, wantS
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set(contract.SchemaVersionHeader, apiv0.SchemaVersion().String())
+	if c.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -173,9 +197,20 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, wantS
 	defer resp.Body.Close()
 
 	if resp.StatusCode != wantStatus {
+		var problem struct {
+			Title    string `json:"title"`
+			Detail   string `json:"detail"`
+			Instance string `json:"instance"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&problem)
+		detail := ""
+		if problem.Detail != "" {
+			detail = ": " + problem.Detail
+		}
 		return &StatusError{
 			Status: resp.StatusCode,
-			msg:    fmt.Sprintf("%s %s: %s%s", method, req.URL, resp.Status, problemDetail(resp.Body)),
+			Title:  problem.Title, Detail: problem.Detail, Instance: problem.Instance, Method: method,
+			msg: fmt.Sprintf("%s %s: %s%s", method, req.URL, resp.Status, detail),
 		}
 	}
 	if out == nil {
@@ -185,15 +220,4 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, wantS
 		return fmt.Errorf("%s %s: cannot decode response: %w", method, req.URL, err)
 	}
 	return nil
-}
-
-// problemDetail extracts the detail of an RFC 7807 response body, if any.
-func problemDetail(body io.Reader) string {
-	var problem struct {
-		Detail string `json:"detail"`
-	}
-	if err := json.NewDecoder(body).Decode(&problem); err != nil || problem.Detail == "" {
-		return ""
-	}
-	return ": " + problem.Detail
 }

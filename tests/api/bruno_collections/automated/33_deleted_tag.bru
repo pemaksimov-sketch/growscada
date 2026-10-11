@@ -1,0 +1,23 @@
+meta {
+  name: deleted_tag
+  type: http
+  seq: 35
+}
+
+get {
+  url: {{baseURL}}/api/v0/tags/{{tagID}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("deleted_tag: status and schema header", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("deleted_tag: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(404); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+
+  });
+}

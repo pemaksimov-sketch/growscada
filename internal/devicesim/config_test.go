@@ -6,8 +6,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/kipitix/growscada/internal/devicelink"
 )
+
+func TestReadConfig_ProjectScope(t *testing.T) {
+	projectID := uuid.NewString()
+	config := "project: " + projectID + "\ntags:\n  - tag: counter\n    pattern: {kind: constant, value: 1}\n"
+	cfg, err := ReadConfig(strings.NewReader(config))
+	if err != nil || cfg.Project != projectID {
+		t.Fatalf("project config: %+v %v", cfg, err)
+	}
+	for _, invalid := range []string{"invalid", uuid.Nil.String()} {
+		if _, err := ReadConfig(strings.NewReader(strings.Replace(config, projectID, invalid, 1))); err == nil {
+			t.Fatal("invalid project accepted")
+		}
+	}
+}
 
 func TestReadConfig_FillsDefaults(t *testing.T) {
 	cfg, err := ReadConfig(strings.NewReader(`

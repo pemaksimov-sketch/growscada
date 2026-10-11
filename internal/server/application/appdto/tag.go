@@ -7,6 +7,8 @@ import (
 
 // Tag is the application-layer DTO for tag data. Fields have no JSON tags — serialization is handled at the interface layer.
 type Tag struct {
+	Origin string
+	Sequence int64
 	ID      uuid.UUID
 	Name    string
 	Type    string

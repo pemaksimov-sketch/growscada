@@ -9,6 +9,7 @@ import (
 	"github.com/kipitix/growscada/internal/server/application/appdto"
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -26,13 +27,16 @@ type eventHub struct {
 	subscriptions []eventbus.Subscription
 	maxClients    int
 
-	mu      sync.Mutex
-	clients map[*eventClient]struct{}
+	mu        sync.Mutex
+	clients   map[*eventClient]struct{}
+	closed    bool
+	closeOnce sync.Once
 }
 
 type eventClient struct {
-	messages chan []byte
-	closed   bool
+	messages  chan []byte
+	closed    bool
+	projectID string
 }
 
 func newEventHub(bus eventbus.EventBus, maxClients int) *eventHub {
@@ -56,15 +60,32 @@ func (h *eventHub) Publish(e event.Event) {
 	h.bus.Publish(e)
 }
 
-// Close detaches the hub from the EventBus. Connected clients are left to be
-// disconnected by their own request context cancellation.
+// Close ends every event stream and rejects future connections before
+// detaching from the EventBus. It is safe to call concurrently or repeatedly.
 func (h *eventHub) Close() {
-	for _, sub := range h.subscriptions {
-		h.bus.Unsubscribe(sub)
-	}
+	h.closeOnce.Do(func() {
+		h.mu.Lock()
+		h.closed = true
+		for c := range h.clients {
+			if !c.closed {
+				c.closed = true
+				close(c.messages)
+			}
+			delete(h.clients, c)
+		}
+		h.mu.Unlock()
+
+		for _, sub := range h.subscriptions {
+			h.bus.Unsubscribe(sub)
+		}
+	})
 }
 
 func (h *eventHub) broadcast(e event.Event) {
+	projectID := ""
+	if scoped, ok := e.(interface{ ScopeProjectID() string }); ok {
+		projectID = scoped.ScopeProjectID()
+	}
 	h.mu.Lock()
 	if len(h.clients) == 0 {
 		h.mu.Unlock()
@@ -76,6 +97,8 @@ func (h *eventHub) broadcast(e event.Event) {
 		Type:      e.Type().String(),
 		Timestamp: e.Timestamp().Time().Format(time.RFC3339),
 		ID:        eventSourceID(e),
+		SceneID:   eventSceneID(e),
+		ProjectID: projectID,
 		Tag:       eventTag(e),
 	})
 	if err != nil {
@@ -85,7 +108,7 @@ func (h *eventHub) broadcast(e event.Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for c := range h.clients {
-		if c.closed {
+		if c.closed || (projectID != "" && c.projectID != projectID) {
 			continue
 		}
 		select {
@@ -98,18 +121,29 @@ func (h *eventHub) broadcast(e event.Event) {
 	}
 }
 
+func eventSceneID(e event.Event) string {
+	if ev, ok := e.(scene.WidgetEvent); ok {
+		return ev.SceneID().String()
+	}
+	return ""
+}
+
 // addClient registers a new SSE connection and returns its message channel.
-// It refuses to register beyond maxClients, returning ok=false so the
+// It refuses to register after Close or beyond maxClients, returning ok=false so the
 // caller can reject the connection before committing to any response.
-func (h *eventHub) addClient() (c *eventClient, ok bool) {
+func (h *eventHub) addClient(projectIDs ...string) (c *eventClient, ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if len(h.clients) >= h.maxClients {
+	if h.closed || len(h.clients) >= h.maxClients {
 		return nil, false
 	}
 
-	c = &eventClient{messages: make(chan []byte, eventClientBufferSize)}
+	projectID := apiv0.MainProjectID
+	if len(projectIDs) > 0 && projectIDs[0] != "" {
+		projectID = projectIDs[0]
+	}
+	c = &eventClient{messages: make(chan []byte, eventClientBufferSize), projectID: projectID}
 	h.clients[c] = struct{}{}
 	return c, true
 }
@@ -133,12 +167,18 @@ func (h *eventHub) removeClient(c *eventClient) {
 // events), if any.
 func eventSourceID(e event.Event) string {
 	switch ev := e.(type) {
+	case project.Event:
+		return ev.ProjectID().String()
 	case tag.TagEvent:
 		return ev.TagID().String()
 	case scene.WidgetEvent:
 		return ev.WidgetID().String()
 	case library.WidgetTypeEvent:
 		return ev.WidgetTypeID().String()
+	case library.LibraryEvent:
+		return ev.LibraryID().String()
+	case library.LibraryReleasedEvent:
+		return ev.LibraryID().String()
 	case scene.SceneEvent:
 		return ev.SceneID().String()
 	case eventbus.ClientEvent:
@@ -151,6 +191,10 @@ func eventSourceID(e event.Event) string {
 // eventTag returns the Tag state carried by a tag_updated event, or nil for
 // every other event.
 func eventTag(e event.Event) *apiv0.TagResponse {
+	if ev, ok := e.(tag.StateUpdatedEvent); ok {
+		s := ev.State()
+		return &apiv0.TagResponse{ID: s.ID().UUID(), Name: ev.Name().String(), Type: s.Type().String(), Origin: ev.Origin().String(), Value: s.Value().String(), Quality: s.Quality().String(), Sequence: s.Sequence()}
+	}
 	ev, ok := e.(tag.TagUpdatedEvent)
 	if !ok {
 		return nil

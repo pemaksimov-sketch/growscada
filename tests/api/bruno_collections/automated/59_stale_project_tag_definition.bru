@@ -1,0 +1,35 @@
+meta {
+  name: stale_project_tag_definition
+  type: http
+  seq: 65
+}
+
+put {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}/tags/{{projectTagA}}/definition
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "ci.project.stale",
+    "version": 1
+  }
+}
+
+tests {
+  test("stale_project_tag_definition: status and schema header", function () {
+    expect(res.getStatus()).to.equal(409);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("stale_project_tag_definition: conflict problem", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(409);
+    expect(body.title).to.be.a("string").and.not.empty;
+    expect(body.detail).to.be.a("string");
+  });
+}

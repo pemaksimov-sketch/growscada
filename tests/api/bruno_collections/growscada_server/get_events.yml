@@ -20,6 +20,10 @@ docs: |
   message is a single SSE `data:` line containing JSON:
   `{"type":"tag_created","timestamp":"2026-01-01T12:00:00Z","id":"<uuid>"}`.
 
+  Since schema 0.2, widget_created/widget_updated/widget_deleted also carry
+  `scene_id`, the UUID of the owning Scene. Clients reload only that Scene
+  and its widgets, including after deletion of the last Widget.
+
   `tag_updated` additionally carries the Tag's full new state in `tag`, in
   the same shape as `GET /api/v0/tags/{id}`, so clients need not read it back:
   `{"type":"tag_updated","timestamp":"2026-01-01T12:00:00Z","id":"<uuid>","tag":{"id":"<uuid>","name":"pressure","type":"integer","value":"42","quality":"good","version":3}}`.

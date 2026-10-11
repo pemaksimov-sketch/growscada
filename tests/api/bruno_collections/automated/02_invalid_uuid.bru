@@ -1,0 +1,23 @@
+meta {
+  name: invalid_uuid
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseURL}}/api/v0/scenes/not-a-uuid
+  body: none
+  auth: none
+}
+
+tests {
+  test("invalid_uuid: status and schema header", function () {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("invalid_uuid: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(400); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+
+  });
+}

@@ -14,8 +14,8 @@ var (
 	// and by Save and Delete when the stored version changed after the widget
 	// type was read (a write race).
 	ErrWidgetTypeConflict = errors.New("widget type version conflict")
-	// ErrWidgetTypeInUse is returned by Delete when Widgets still use the
-	// widget type: a Widget's WidgetType always exists.
+	// ErrWidgetTypeInUse is retained for schemas that still enforce the legacy
+	// Widget-to-draft foreign key. Pinned Releases no longer use that relation.
 	ErrWidgetTypeInUse = errors.New("widget type is used by widgets")
 	// ErrInvalidWidgetType is returned by WidgetType.Update when the new
 	// definition breaks a rule of the widget type as a whole (e.g. two
@@ -46,7 +46,8 @@ type WidgetTypeRepository interface {
 	// transaction.
 	// Returns ErrWidgetTypeNotFound if the widget type does not exist,
 	// ErrWidgetTypeConflict if the stored version does not match,
-	// ErrWidgetTypeInUse if Widgets still use it.
+	// ErrWidgetTypeInUse only when a legacy schema still enforces a direct
+	// Widget-to-draft foreign key.
 	Delete(context.Context, WidgetType) error
 
 	// FindAll returns all widget types in creation order, so the order is

@@ -1,0 +1,18 @@
+meta {
+  name: empty_library_types
+  type: http
+  seq: 77
+}
+
+get {
+  url: {{baseURL}}/api/v0/libraries/{{testLibraryID}}/widget-types
+  body: none
+  auth: none
+}
+
+tests {
+  test("empty_library_types: isolated draft", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().widget_types).to.have.length(0);
+  });
+}

@@ -1,0 +1,23 @@
+meta {
+  name: list_scenes
+  type: http
+  seq: 25
+}
+
+get {
+  url: {{baseURL}}/api/v0/scenes
+  body: none
+  auth: none
+}
+
+tests {
+  test("list_scenes: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("list_scenes: response", function () {
+    const body = res.getBody();
+
+    expect(body.scenes).to.have.length(1); expect(body.scenes[0].name).to.equal("CI updated screen"); expect(body.scenes[0].version).to.equal(4);
+  });
+}

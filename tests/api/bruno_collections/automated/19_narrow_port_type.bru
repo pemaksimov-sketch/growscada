@@ -1,0 +1,46 @@
+meta {
+  name: narrow_port_type
+  type: http
+  seq: 21
+}
+
+put {
+  url: {{baseURL}}/api/v0/widget-types/{{typeID}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI counter",
+    "html_template": "<div id=\"counter\"></div>",
+    "script": "function render(inputs) { document.querySelector('#counter').textContent = inputs.n.raw; }",
+    "script_language": "javascript",
+    "default_width": 120,
+    "default_height": 60,
+    "input_ports": [
+      {
+        "name": "n",
+        "description": "Counter",
+        "type_hint": "string"
+      }
+    ],
+    "version": 1
+  }
+}
+
+tests {
+  test("narrow_port_type: status and schema header", function () {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("narrow_port_type: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(400); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+
+  });
+}

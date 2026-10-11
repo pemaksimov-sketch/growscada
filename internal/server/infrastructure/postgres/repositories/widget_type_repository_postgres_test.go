@@ -339,9 +339,16 @@ func TestWidgetTypeFindAll_CreationOrderEvenAfterUpdates(t *testing.T) {
 	}
 }
 
-func TestWidgetTypeDelete_UsedByWidget_ReturnsErrWidgetTypeInUse(t *testing.T) {
+func TestWidgetTypeDelete_UsedByWidget_RemovesDraftButKeepsWidget(t *testing.T) {
 	cleanScenes(t)
 	cleanWidgetTypes(t)
+	// This package's shared fixture intentionally stops before the Engineering
+	// schema migration. Match the Library Release schema behavior here: Widgets
+	// resolve their type through a pinned immutable snapshot, so the legacy FK
+	// to the mutable Draft row is absent.
+	if _, err := testDB.Exec(`ALTER TABLE widgets DROP CONSTRAINT IF EXISTS fk_widgets_type_id`); err != nil {
+		t.Fatalf("prepare Library Release schema: %v", err)
+	}
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
 	ctx := context.Background()
@@ -354,10 +361,14 @@ func TestWidgetTypeDelete_UsedByWidget_ReturnsErrWidgetTypeInUse(t *testing.T) {
 		t.Fatalf("FindByID: %v", err)
 	}
 	err = repo.Delete(ctx, wt.Delete())
-	if !errors.Is(err, library.ErrWidgetTypeInUse) {
-		t.Errorf("expected ErrWidgetTypeInUse, got %v", err)
+	if err != nil {
+		t.Fatalf("draft delete was rejected because a Project uses its pinned Release: %v", err)
 	}
-	if _, err := repo.FindByID(ctx, w.TypeID()); err != nil {
-		t.Errorf("widget type after refused delete: %v", err)
+	if _, err := repo.FindByID(ctx, w.TypeID()); !errors.Is(err, library.ErrWidgetTypeNotFound) {
+		t.Errorf("draft widget type still exists after delete: %v", err)
+	}
+	projectScenes, err := sceneRepo.FindByWidgetTypeID(ctx, w.TypeID())
+	if err != nil || len(projectScenes) != 1 || len(projectScenes[0].Widgets()) != 1 {
+		t.Errorf("project widget was removed with the draft type: %+v %v", projectScenes, err)
 	}
 }

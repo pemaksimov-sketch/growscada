@@ -1,0 +1,17 @@
+meta {
+  name: unpin_library
+  type: http
+  seq: 84
+}
+
+delete {
+  url: {{baseURL}}/api/v0/projects/{{mainProject}}/libraries/{{testLibraryID}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("unpin_library: pin removed", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}

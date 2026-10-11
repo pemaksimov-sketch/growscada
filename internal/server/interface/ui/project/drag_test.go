@@ -1,9 +1,12 @@
 package project
 
-import "testing"
+import (
+	"github.com/google/uuid"
+	"testing"
+)
 
 func TestDragChangedWidget_SavesOnlyAMovedAndChangedWidget(t *testing.T) {
-	start := widgetItem{ID: "w", Position: positionDTO{X: 10, Y: 20}, Size: sizeDTO{Width: 100, Height: 50}, Rotation: rotationDTO{Degrees: 0}}
+	start := widgetItem{ID: uuid.MustParse("00000000-0000-4000-8000-000000000003"), Position: positionDTO{X: 10, Y: 20}, Size: sizeDTO{Width: 100, Height: 50}, Rotation: rotationDTO{Degrees: 0}}
 	moved := start
 	moved.Position.X = 15
 	rotated := start
@@ -22,7 +25,7 @@ func TestDragChangedWidget_SavesOnlyAMovedAndChangedWidget(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			p := &Project{dragDidMove: tc.didMove, dragStartGeometry: start.geometry()}
+			p := &Project{dragDidMove: tc.didMove, dragStartGeometry: geometryOf(start)}
 			if got := p.dragChangedWidget(tc.now); got != tc.want {
 				t.Errorf("dragChangedWidget: got %v, want %v", got, tc.want)
 			}

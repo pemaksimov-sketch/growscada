@@ -1,0 +1,20 @@
+meta {
+  name: main_default_library_pin
+  type: http
+  seq: 85
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{mainProject}}/libraries
+  body: none
+  auth: none
+}
+
+tests {
+  test("main_default_library_pin: test release remains pinned", function () {
+    expect(res.getStatus()).to.equal(200);
+    const pin = res.getBody().pins.find(item => item.library_id === bru.getVar("defaultLibraryID"));
+    expect(pin).to.exist;
+    expect(pin.release.id).to.equal(bru.getVar("defaultTestRelease"));
+  });
+}

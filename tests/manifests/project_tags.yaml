@@ -1,0 +1,11 @@
+# Explicit Project scope (manifest 0.2). Replace the Main UUID to use a different
+# project. A conflicting --project/GROWCTL_PROJECT is rejected before any write.
+apiVersion: growscada/v0.2
+kind: Tag
+metadata:
+  project: 00000000-0000-4000-8000-000000000001
+  name: scoped.counter
+spec:
+  type: integer
+  initialValue: "0"
+  initialQuality: good

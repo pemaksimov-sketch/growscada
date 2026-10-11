@@ -1,0 +1,23 @@
+meta {
+  name: filter_no_match
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseURL}}/api/v0/tags?name=ci.missing
+  body: none
+  auth: none
+}
+
+tests {
+  test("filter_no_match: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
+  });
+  test("filter_no_match: response", function () {
+    const body = res.getBody();
+
+    expect(body.tags).to.deep.equal([]);
+  });
+}

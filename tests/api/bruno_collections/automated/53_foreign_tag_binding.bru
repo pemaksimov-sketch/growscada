@@ -1,0 +1,57 @@
+meta {
+  name: foreign_tag_binding
+  type: http
+  seq: 58
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects/{{projectB}}/scenes/{{projectSceneB}}/widgets
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI scoped widget",
+    "position": {
+      "x": 10,
+      "y": 20,
+      "z": 0
+    },
+    "size": {
+      "width": 100,
+      "height": 50
+    },
+    "origin": {
+      "x": 0,
+      "y": 0
+    },
+    "rotation": {
+      "degrees": 0
+    },
+    "type_id": "{{projectType}}",
+    "port_bindings": [
+      {
+        "port_name": "n",
+        "tag_id": "{{projectTagA}}"
+      }
+    ],
+    "labels": [],
+    "scene_version": 1
+  }
+}
+
+tests {
+  test("foreign_tag_binding: status and schema header", function () {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("foreign_tag_binding: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(400); expect(body.title).to.be.a("string").and.not.empty;
+  });
+}

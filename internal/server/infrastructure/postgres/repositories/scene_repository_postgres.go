@@ -9,27 +9,36 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"github.com/kipitix/growscada/internal/server/domain/entityorigin"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/version"
 )
 
 type sceneRepositoryPostgresImpl struct {
-	db    *sql.DB
-	store aggregateStore[scene.Scene]
+	db        *sql.DB
+	store     aggregateStore[scene.Scene]
+	projectID id.ID[project.Project]
 }
 
 var _ scene.SceneRepository = (*sceneRepositoryPostgresImpl)(nil)
 
 func NewSceneRepositoryPostgres(aDb *sql.DB, opts ...Option) scene.SceneRepository {
+	return newProjectSceneRepository(aDb, project.MainID(), opts...)
+}
+
+func newProjectSceneRepository(aDb *sql.DB, projectID id.ID[project.Project], opts ...Option) scene.SceneRepository {
 	o := newOptions(opts)
 	return &sceneRepositoryPostgresImpl{
-		db: aDb,
+		db:        aDb,
+		projectID: projectID,
 		store: aggregateStore[scene.Scene]{
 			db: aDb, table: tableNameScenes,
 			notFound: scene.ErrSceneNotFound, conflict: scene.ErrSceneConflict,
-			onCommit: o.onCommit,
+			onCommit:    o.onCommit,
+			scopeColumn: "project_id", scopeID: projectID.UUID(),
 		},
 	}
 }
@@ -54,27 +63,27 @@ func (r sceneRepositoryPostgresImpl) Save(ctx context.Context, s scene.Scene) (s
 	newVersion, err := r.store.save(ctx, s.ID(), s.Version(), s.PendingEvents(), rowWrite[scene.Scene]{
 		insert: func(tx *sql.Tx, next version.Version[scene.Scene]) error {
 			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO scenes (id, name, width, height, background_html, version)
-				VALUES ($1, $2, $3, $4, $5, $6)`,
+				`INSERT INTO scenes (id, name, width, height, background_html, version, project_id)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 				s.ID().UUID(), s.Name().String(),
 				s.Size().Width(), s.Size().Height(),
 				s.BackgroundHTML().Content(),
-				next.Number(),
+				next.Number(), r.projectID.UUID(),
 			); err != nil {
 				return fmt.Errorf("cannot insert new scene: %w", err)
 			}
-			return saveWidgets(ctx, tx, s.ID(), nil, s.Widgets())
+			return saveWidgets(ctx, tx, s.ID(), r.projectID.UUID(), nil, s.Widgets())
 		},
 		update: func(tx *sql.Tx, current, next version.Version[scene.Scene]) (bool, error) {
 			res, err := tx.ExecContext(ctx,
 				`UPDATE scenes
 				 SET name = $1, width = $2, height = $3, background_html = $4, version = $5
-				 WHERE id = $6 AND version = $7`,
+				 WHERE id = $6 AND version = $7 AND project_id = $8`,
 				s.Name().String(),
 				s.Size().Width(), s.Size().Height(),
 				s.BackgroundHTML().Content(),
 				next.Number(),
-				s.ID().UUID(), current.Number(),
+				s.ID().UUID(), current.Number(), r.projectID.UUID(),
 			)
 			if err != nil {
 				return false, fmt.Errorf("cannot update scene: %w", err)
@@ -90,7 +99,7 @@ func (r sceneRepositoryPostgresImpl) Save(ctx context.Context, s scene.Scene) (s
 			if err != nil {
 				return false, err
 			}
-			return true, saveWidgets(ctx, tx, s.ID(), byScene[s.ID().UUID()], s.Widgets())
+			return true, saveWidgets(ctx, tx, s.ID(), r.projectID.UUID(), byScene[s.ID().UUID()], s.Widgets())
 		},
 	})
 	if err != nil {
@@ -108,7 +117,7 @@ func (r sceneRepositoryPostgresImpl) Delete(ctx context.Context, s scene.Scene) 
 
 // saveWidgets brings the scene's widget rows from stored to wanted: inserts
 // the new widgets, updates the changed ones and deletes those that are gone.
-func saveWidgets(ctx context.Context, tx *sql.Tx, sceneID id.ID[scene.Scene], stored, wanted []scene.Widget) error {
+func saveWidgets(ctx context.Context, tx *sql.Tx, sceneID id.ID[scene.Scene], projectID uuid.UUID, stored, wanted []scene.Widget) error {
 	storedByID := make(map[id.ID[scene.Widget]]scene.Widget, len(stored))
 	for _, w := range stored {
 		storedByID[w.ID()] = w
@@ -140,35 +149,58 @@ func saveWidgets(ctx context.Context, tx *sql.Tx, sceneID id.ID[scene.Scene], st
 			return fmt.Errorf("cannot serialize port bindings: %w", err)
 		}
 		if exists {
-			_, err = tx.ExecContext(ctx,
-				`UPDATE widgets
+			if old.EntityOrigin() != w.EntityOrigin() {
+				_, err = tx.ExecContext(ctx,
+					`UPDATE widgets
+					 SET name = $1, x = $2, y = $3, z = $4, width = $5, height = $6,
+					     origin_x = $7, origin_y = $8, rotation_degrees = $9,
+					     type_id = $10, labels = $11, port_bindings = $12, entity_origin = $13
+					 WHERE id = $14 AND scene_id = $15`,
+					w.Name().String(), w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(), w.Origin().X(), w.Origin().Y(), w.Rotation().Degrees(),
+					w.TypeID().UUID(), pq.Array(w.Labels()), portBindingsJSON, w.EntityOrigin().String(), w.ID().UUID(), sceneID.UUID())
+			} else {
+				_, err = tx.ExecContext(ctx,
+					`UPDATE widgets
 				 SET name = $1, x = $2, y = $3, z = $4, width = $5, height = $6,
 				     origin_x = $7, origin_y = $8, rotation_degrees = $9,
 				     type_id = $10, labels = $11, port_bindings = $12
 				 WHERE id = $13 AND scene_id = $14`,
-				w.Name().String(),
-				w.Position().X(), w.Position().Y(), w.Position().Z(),
-				w.Size().Width(), w.Size().Height(),
-				w.Origin().X(), w.Origin().Y(),
-				w.Rotation().Degrees(),
-				w.TypeID().UUID(),
-				pq.Array(w.Labels()), portBindingsJSON,
-				w.ID().UUID(), sceneID.UUID(),
-			)
+					w.Name().String(),
+					w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(),
+					w.Origin().X(), w.Origin().Y(),
+					w.Rotation().Degrees(),
+					w.TypeID().UUID(),
+					pq.Array(w.Labels()), portBindingsJSON,
+					w.ID().UUID(), sceneID.UUID(),
+				)
+			}
 		} else {
-			_, err = tx.ExecContext(ctx,
-				`INSERT INTO widgets
+			if w.EntityOrigin() == entityorigin.Project {
+				_, err = tx.ExecContext(ctx,
+					`INSERT INTO widgets
 				    (id, name, x, y, z, width, height, origin_x, origin_y, rotation_degrees,
-				     type_id, scene_id, labels, port_bindings)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-				w.ID().UUID(), w.Name().String(),
-				w.Position().X(), w.Position().Y(), w.Position().Z(),
-				w.Size().Width(), w.Size().Height(),
-				w.Origin().X(), w.Origin().Y(),
-				w.Rotation().Degrees(),
-				w.TypeID().UUID(), sceneID.UUID(),
-				pq.Array(w.Labels()), portBindingsJSON,
-			)
+				     type_id, scene_id, labels, port_bindings, project_id)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+					w.ID().UUID(), w.Name().String(),
+					w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(),
+					w.Origin().X(), w.Origin().Y(),
+					w.Rotation().Degrees(),
+					w.TypeID().UUID(), sceneID.UUID(),
+					pq.Array(w.Labels()), portBindingsJSON, projectID,
+				)
+			} else {
+				_, err = tx.ExecContext(ctx,
+					`INSERT INTO widgets
+				    (id, name, x, y, z, width, height, origin_x, origin_y, rotation_degrees,
+				     type_id, scene_id, labels, port_bindings, project_id, entity_origin)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+					w.ID().UUID(), w.Name().String(), w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(), w.Origin().X(), w.Origin().Y(), w.Rotation().Degrees(),
+					w.TypeID().UUID(), sceneID.UUID(), pq.Array(w.Labels()), portBindingsJSON, projectID, w.EntityOrigin().String())
+			}
 		}
 		if err != nil {
 			if isForeignKeyViolation(err, constraintWidgetsTypeID) {
@@ -183,6 +215,7 @@ func saveWidgets(ctx context.Context, tx *sql.Tx, sceneID id.ID[scene.Scene], st
 // sameWidget reports whether a and b would be stored as the same row.
 func sameWidget(a, b scene.Widget) bool {
 	return a.Name() == b.Name() &&
+		a.EntityOrigin() == b.EntityOrigin() &&
 		a.Position() == b.Position() &&
 		a.Size() == b.Size() &&
 		a.Origin() == b.Origin() &&
@@ -236,6 +269,13 @@ func (row *rawSceneRow) dest() []any {
 // they see the database at the same moment: a scene and its widgets always
 // belong to one version.
 func (r sceneRepositoryPostgresImpl) readScenes(ctx context.Context, where string, args ...any) ([]scene.Scene, error) {
+	if where == "" {
+		where = "WHERE "
+	} else {
+		where += " AND "
+	}
+	where += fmt.Sprintf("scenes.project_id = $%d", len(args)+1)
+	args = append(args, r.projectID.UUID())
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("cannot begin transaction: %w", err)
@@ -299,7 +339,7 @@ func findWidgetsBySceneIDs(ctx context.Context, tx *sql.Tx, sceneIDs []uuid.UUID
 	}
 
 	rows, err := tx.QueryContext(ctx,
-		"SELECT "+selectWidgetColumns+" FROM widgets WHERE scene_id = ANY($1::uuid[]) ORDER BY pk_id",
+		"SELECT "+selectWidgetColumns+" FROM widgets AS w WHERE w.scene_id = ANY($1::uuid[]) ORDER BY w.pk_id",
 		pq.Array(rawIDs),
 	)
 	if err != nil {

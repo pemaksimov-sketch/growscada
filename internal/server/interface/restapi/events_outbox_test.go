@@ -34,7 +34,7 @@ func TestEventsHandlers_GetEvents_DeliversCommittedChangesInCommitOrder(t *testi
 	tagSvc := application.NewTagService(repositories.NewTagRepositoryPostgres(testDB, onCommit))
 	sceneSvc := application.NewSceneService(
 		repositories.NewSceneRepositoryPostgres(testDB, onCommit),
-		repositories.NewWidgetTypeRepositoryPostgres(testDB, onCommit))
+		repositories.NewWidgetTypeRepositoryPostgres(testDB, onCommit), repositories.NewTagRepositoryPostgres(testDB))
 
 	h := restapi.NewEventsHandler(bus, 100)
 	rec := newSyncRecorder()

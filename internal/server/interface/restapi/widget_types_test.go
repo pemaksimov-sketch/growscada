@@ -31,8 +31,8 @@ func newRouterWithWidgetTypes() *restapi.APIRouter {
 	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo)
-	sceneSvc := application.NewSceneService(sceneRepo, wtRepo)
+	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
+	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, repositories.NewTagRepositoryPostgres(testDB))
 	return restapi.NewRouter(tagSvc, wtSvc, sceneSvc, eventbus.NewEventBus(), 100)
 }
 
@@ -40,7 +40,7 @@ func createWidgetTypeViaService(t *testing.T, input appdto.WidgetTypeInput) appd
 	t.Helper()
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	svc := application.NewWidgetTypeService(repo, sceneRepo)
+	svc := application.NewWidgetTypeService(repo, sceneRepo, repositories.NewTagRepositoryPostgres(testDB))
 	resp, err := svc.CreateWidgetType(context.Background(), input)
 	if err != nil {
 		t.Fatalf("createWidgetTypeViaService: %v", err)
@@ -293,7 +293,7 @@ func TestPutWidgetTypesByID_Conflict_Returns409(t *testing.T) {
 	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
-	sceneSvc := application.NewSceneService(sceneRepo, wtRepo)
+	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, repositories.NewTagRepositoryPostgres(testDB))
 	router := restapi.NewRouter(tagSvc, svc, sceneSvc, eventbus.NewEventBus(), 100)
 
 	body, _ := json.Marshal(apiv0.UpdateWidgetTypeRequest{

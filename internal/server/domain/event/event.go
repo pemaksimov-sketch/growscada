@@ -18,6 +18,7 @@ type Event interface {
 type Base struct {
 	eventType EventType
 	timestamp EventTimestamp
+	projectID string
 }
 
 var _ Event = Base{}
@@ -33,6 +34,11 @@ func NewBase(anEventType EventType, opts ...EventOption) Base {
 }
 
 type EventOption func(*Base)
+
+// WithProjectID restores delivery scope from the committed outbox row. Domain
+// changes need not carry infrastructure scope through every aggregate method.
+func WithProjectID(projectID string) EventOption { return func(b *Base) { b.projectID = projectID } }
+func (ev Base) ScopeProjectID() string           { return ev.projectID }
 
 // WithTimestamp gives the event the timestamp it was recorded with, e.g. when
 // it is read back from storage.

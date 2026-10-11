@@ -55,7 +55,7 @@ _Avoid_: screen, mnemonic, page, display
 ### Organisation
 
 **Organization**:
-The tenant: the top-level owner of Projects and Libraries, whose members are the people working in them. Everything a server stores belongs to exactly one Organization; Organizations are isolated from each other, except that an Organization may make a Library public so that any Project on the server can pin its Library Releases. Not yet modelled.
+The tenant: the top-level owner of Projects and Libraries, whose members are the people working in them. Everything a server stores belongs to exactly one Organization; Organizations are isolated from each other, except that an Organization may make a Library public so that any Project on the server can pin its Library Releases. Organization storage is modelled; users and membership are not yet modelled.
 _Avoid_: tenant (in UI), company, account, team
 
 **Project**:
@@ -121,7 +121,7 @@ An immutable, numbered snapshot of the project configuration produced by Deploy.
 _Avoid_: release (that is a Library Release), build, version (that is the concurrency counter)
 
 **Origin**:
-Where a Tag or Widget came from: `Project` (defined in the Draft and deployed) or `Runtime` (created while the system runs — by a Device, an integration, or a person in Operation). WidgetTypes have no Origin: they are always project-defined.
+Where a Tag or Widget came from: `Project` (defined in the Draft and deployed) or `Runtime` (created while the system runs — by a Device, an integration, or a person in Operation). WidgetTypes have no Origin: a Project uses the immutable definitions in its pinned Library Releases.
 _Avoid_: source, dynamic/static
 
 **Adopt**:

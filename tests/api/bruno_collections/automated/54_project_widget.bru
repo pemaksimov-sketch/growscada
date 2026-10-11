@@ -1,0 +1,57 @@
+meta {
+  name: project_widget
+  type: http
+  seq: 59
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects/{{projectB}}/scenes/{{projectSceneB}}/widgets
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI scoped widget",
+    "position": {
+      "x": 10,
+      "y": 20,
+      "z": 0
+    },
+    "size": {
+      "width": 100,
+      "height": 50
+    },
+    "origin": {
+      "x": 0,
+      "y": 0
+    },
+    "rotation": {
+      "degrees": 0
+    },
+    "type_id": "{{projectType}}",
+    "port_bindings": [
+      {
+        "port_name": "n",
+        "tag_id": "{{projectTagB}}"
+      }
+    ],
+    "labels": [],
+    "scene_version": 1
+  }
+}
+
+tests {
+  test("project_widget: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.5");
+  });
+  test("project_widget: response", function () {
+    const body = res.getBody();
+    bru.setVar("projectWidgetB",body.id);
+  });
+}

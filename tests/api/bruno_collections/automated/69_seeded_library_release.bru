@@ -1,0 +1,21 @@
+meta {
+  name: seeded_library_release
+  type: http
+  seq: 75
+}
+
+get {
+  url: {{baseURL}}/api/v0/libraries/{{defaultLibraryID}}/releases
+  body: none
+  auth: none
+}
+
+tests {
+  test("seeded_library_release: first immutable release exists", function () {
+    expect(res.getStatus()).to.equal(200);
+    const releases = res.getBody().releases;
+    const seeded = releases.find(release => release.number === 1);
+    expect(seeded).to.exist;
+    bru.setVar("seededLibraryReleaseID", seeded.id);
+  });
+}

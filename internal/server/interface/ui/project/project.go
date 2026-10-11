@@ -2,7 +2,11 @@ package project
 
 import (
 	"fmt"
+	"github.com/google/uuid"
+	apiv0 "github.com/kipitix/growscada/contract/api/v0"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"math"
+	"net/http"
 	"strconv"
 
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
@@ -15,8 +19,9 @@ import (
 type projectSubTab string
 
 const (
-	subTabScenes projectSubTab = "scenes"
-	subTabTags   projectSubTab = "tags"
+	subTabScenes    projectSubTab = "scenes"
+	subTabTags      projectSubTab = "tags"
+	subTabLibraries projectSubTab = "libraries"
 )
 
 type Project struct {
@@ -26,20 +31,30 @@ type Project struct {
 	// element that fired the event, and go-app silently drops Dispatch once that
 	// element is unmounted (e.g. a tab that turns into its rename input), which
 	// would lose the result and leave a Reloader loading forever.
-	compoCtx     app.Context
-	ThemeMode    string // exported so go-app detects theme changes and re-renders
-	apiServerURL string
+	compoCtx  app.Context
+	ThemeMode string // exported so go-app detects theme changes and re-renders
+	client    apiclient.Server
+	tasks     uiutil.Tasks
+	projectID uuid.UUID
 
 	activeSubTab projectSubTab
+	showGuides   bool
 
-	widgetTypes []widgetTypeItem
-	scenes      []sceneItem
-	widgets     []widgetItem
-	tags        []tagItem
+	widgetTypes       []widgetTypeItem
+	scenes            []sceneItem
+	widgets           []widgetItem
+	tags              []tagItem
+	libraries         []apiv0.LibraryResponse
+	libraryReleases   []apiv0.LibraryReleaseResponse
+	libraryPins       []apiv0.ProjectLibraryPinResponse
+	selectedLibraryID string
+	selectedReleaseID string
 
 	// Coalesce reloads of each server-backed list (see live_reload.go).
 	widgetTypesReloader uiutil.Reloader
 	scenesReloader      uiutil.Reloader
+	sceneReloaders      map[string]*uiutil.Reloader
+	sceneWrites         map[string]*sceneWrites
 	widgetsReloader     uiutil.Reloader
 	tagsReloader        uiutil.Reloader
 	// widgetsReloadDeferred is set when a widget reload arrives mid-drag; it
@@ -138,33 +153,58 @@ type Project struct {
 	panelResizeStartWidth int
 }
 
-func NewProject(apiServerURL string) *Project {
-	return &Project{apiServerURL: apiServerURL, activeSubTab: subTabScenes}
+func NewProject(apiServerURL string, projectIDs ...uuid.UUID) *Project {
+	client := apiclient.New(apiServerURL, http.DefaultClient)
+	projectID := uuid.Nil
+	if len(projectIDs) > 0 {
+		projectID = projectIDs[0]
+		client = client.ForProject(projectID)
+	}
+	return &Project{client: client, projectID: projectID, activeSubTab: subTabScenes, showGuides: true}
+}
+
+func (p *Project) selectionKey(key string) string {
+	if p.projectID == uuid.Nil || p.projectID.String() == apiv0.MainProjectID {
+		return key
+	}
+	return key + ":" + p.projectID.String()
 }
 
 func (p *Project) OnMount(ctx app.Context) {
 	p.compoCtx = ctx
+	p.tasks = uiutil.BrowserTasks(ctx)
+	remember := p.tasks.Remember
+	p.tasks.Remember = func(key string, value any) {
+		if key == "project:sceneID" || key == "project:widgetID" || key == "project:tagID" {
+			key = p.selectionKey(key)
+		}
+		remember(key, value)
+	}
 	ctx.ObserveState("theme", &p.ThemeMode)
 	p.simInputs = make(map[string]map[string]string)
 	p.widgetTypeWidth = 180
 	p.propertiesWidth = 260
 	ctx.LocalStorage().Get("project:widgetTypeWidth", &p.widgetTypeWidth)
 	ctx.LocalStorage().Get("project:propertiesWidth", &p.propertiesWidth)
+	ctx.LocalStorage().Get("project:showGuides", &p.showGuides)
 
 	var savedTab string
 	ctx.LocalStorage().Get("project:subTab", &savedTab)
 	if savedTab != "" {
 		p.activeSubTab = projectSubTab(savedTab)
 	}
-	ctx.LocalStorage().Get("project:sceneID", &p.selectedSceneID)
-	ctx.LocalStorage().Get("project:widgetID", &p.selectedWidgetID)
-	ctx.LocalStorage().Get("project:tagID", &p.selectedTagID)
+	ctx.LocalStorage().Get(p.selectionKey("project:sceneID"), &p.selectedSceneID)
+	ctx.LocalStorage().Get(p.selectionKey("project:widgetID"), &p.selectedWidgetID)
+	ctx.LocalStorage().Get(p.selectionKey("project:tagID"), &p.selectedTagID)
 	p.loadWidgetTypes(ctx)
 	p.loadScenes(ctx)
 	if p.selectedSceneID != "" {
 		p.loadWidgets(ctx) // load widgets for the restored scene immediately
 	}
 	p.loadTags(ctx)
+	if p.activeSubTab == subTabLibraries {
+		p.loadProjectLibraries(ctx)
+	}
 
 	p.handleServerEvents(ctx)
 }
@@ -175,9 +215,9 @@ func (p *Project) OnMount(ctx app.Context) {
 
 func (p *Project) selectWidget(ctx app.Context, id string) {
 	p.selectedWidgetID = id
-	ctx.LocalStorage().Set("project:widgetID", id)
+	p.tasks.Store("project:widgetID", id)
 	for _, w := range p.widgets {
-		if w.ID == id {
+		if w.ID.String() == id {
 			p.syncEditingFields(w)
 			break
 		}
@@ -195,12 +235,12 @@ func (p *Project) clearWidgetSelection(ctx app.Context) {
 	p.editingOriginX = ""
 	p.editingOriginY = ""
 	p.editingRotation = ""
-	ctx.LocalStorage().Set("project:widgetID", "")
+	p.tasks.Store("project:widgetID", "")
 }
 
 func (p *Project) selectedWidgetIdx() int {
 	for i, w := range p.widgets {
-		if w.ID == p.selectedWidgetID {
+		if w.ID.String() == p.selectedWidgetID {
 			return i
 		}
 	}
@@ -213,7 +253,7 @@ func (p *Project) selectedWidgetIdx() int {
 // leaving `w` stale across drags.
 func (p *Project) widgetByID(id string) (widgetItem, bool) {
 	for _, w := range p.widgets {
-		if w.ID == id {
+		if w.ID.String() == id {
 			return w, true
 		}
 	}
@@ -222,7 +262,7 @@ func (p *Project) widgetByID(id string) (widgetItem, bool) {
 
 func (p *Project) widgetTypeByID(id string) (widgetTypeItem, bool) {
 	for _, wt := range p.widgetTypes {
-		if wt.ID == id {
+		if wt.ID.String() == id {
 			return wt, true
 		}
 	}
@@ -242,8 +282,8 @@ func (p *Project) Render() app.UI {
 			p.renderSubTabs(),
 			app.If(p.activeSubTab == subTabScenes, func() app.UI {
 				return p.renderScenesContent()
-			}).Else(func() app.UI {
-				return p.renderTagsPanel()
+			}).ElseIf(p.activeSubTab == subTabTags, func() app.UI { return p.renderTagsPanel() }).Else(func() app.UI {
+				return p.renderLibrariesPanel()
 			}),
 		)
 }
@@ -258,6 +298,16 @@ func (p *Project) renderSubTabs() app.UI {
 		Body(
 			p.subTab("Scenes", subTabScenes),
 			p.subTab("Tags", subTabTags),
+			p.subTab("Libraries", subTabLibraries),
+			app.Div().Style("flex", "1"),
+			app.If(p.activeSubTab == subTabScenes, func() app.UI {
+				return app.Label().Style("display", "flex").Style("align-items", "center").Style("gap", "4px").Style("font-size", "12px").Body(
+					app.Input().Type("checkbox").Checked(p.showGuides).OnChange(func(ctx app.Context, e app.Event) {
+						p.showGuides = ctx.JSSrc().Get("checked").Bool()
+						p.tasks.Store("project:showGuides", p.showGuides)
+					}), app.Text("Guides"),
+				)
+			}),
 		)
 }
 
@@ -273,7 +323,10 @@ func (p *Project) subTab(label string, tab projectSubTab) app.UI {
 		Text(label).
 		OnClick(func(ctx app.Context, e app.Event) {
 			p.activeSubTab = tab
-			ctx.LocalStorage().Set("project:subTab", string(tab))
+			p.tasks.Store("project:subTab", string(tab))
+			if tab == subTabLibraries {
+				p.loadProjectLibraries(ctx)
+			}
 		})
 	if active {
 		return el.
@@ -327,9 +380,9 @@ func (p *Project) renderScenesContent() app.UI {
 			// Mouse button released outside this element — cancel all drags.
 			if e.Get("buttons").Int() == 0 {
 				if p.resizingPanelSide == "left" {
-					ctx.LocalStorage().Set("project:widgetTypeWidth", p.widgetTypeWidth)
+					p.tasks.Store("project:widgetTypeWidth", p.widgetTypeWidth)
 				} else if p.resizingPanelSide == "right" {
-					ctx.LocalStorage().Set("project:propertiesWidth", p.propertiesWidth)
+					p.tasks.Store("project:propertiesWidth", p.propertiesWidth)
 				}
 				p.resizingPanelSide = ""
 				p.finalizeAllDrags(ctx)
@@ -367,7 +420,7 @@ func (p *Project) renderScenesContent() app.UI {
 			if id := p.draggedWidgetID(); id != "" {
 				if !p.dragDidMove {
 					if w, ok := p.widgetByID(id); ok {
-						p.dragStartGeometry = w.geometry()
+						p.dragStartGeometry = geometryOf(w)
 					}
 				}
 				p.dragDidMove = true
@@ -378,7 +431,7 @@ func (p *Project) renderScenesContent() app.UI {
 				dx := clientX - p.dragStartCliX
 				dy := clientY - p.dragStartCliY
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.draggingWidgetID {
+					if p.widgets[i].ID.String() == p.draggingWidgetID {
 						p.widgets[i].Position.X = p.dragStartPosX + dx
 						p.widgets[i].Position.Y = p.dragStartPosY + dy
 						if p.selectedWidgetID == p.draggingWidgetID {
@@ -410,7 +463,7 @@ func (p *Project) renderScenesContent() app.UI {
 				newPosX := p.originStartPosX - dOx*(1-cosA) - dOy*sinA
 				newPosY := p.originStartPosY - dOy*(1-cosA) + dOx*sinA
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.draggingOriginID {
+					if p.widgets[i].ID.String() == p.draggingOriginID {
 						p.widgets[i].Origin.X = newOX
 						p.widgets[i].Origin.Y = newOY
 						p.widgets[i].Position.X = newPosX
@@ -437,7 +490,7 @@ func (p *Project) renderScenesContent() app.UI {
 					newDeg += 360
 				}
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.rotatingWidgetID {
+					if p.widgets[i].ID.String() == p.rotatingWidgetID {
 						p.widgets[i].Rotation.Degrees = newDeg
 						if p.selectedWidgetID == p.rotatingWidgetID {
 							p.editingRotation = fmt.Sprintf("%.1f", newDeg)
@@ -475,7 +528,7 @@ func (p *Project) renderScenesContent() app.UI {
 				newPosX := p.resizeStartE - newOx*(1-cosA) - sinA*newOy
 				newPosY := p.resizeStartF + sinA*newOx - newOy*(1-cosA)
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.resizingWidgetID {
+					if p.widgets[i].ID.String() == p.resizingWidgetID {
 						p.widgets[i].Size.Width = newW
 						p.widgets[i].Size.Height = newH
 						p.widgets[i].Position.X = newPosX
@@ -493,9 +546,9 @@ func (p *Project) renderScenesContent() app.UI {
 		}).
 		OnMouseUp(func(ctx app.Context, e app.Event) {
 			if p.resizingPanelSide == "left" {
-				ctx.LocalStorage().Set("project:widgetTypeWidth", p.widgetTypeWidth)
+				p.tasks.Store("project:widgetTypeWidth", p.widgetTypeWidth)
 			} else if p.resizingPanelSide == "right" {
-				ctx.LocalStorage().Set("project:propertiesWidth", p.propertiesWidth)
+				p.tasks.Store("project:propertiesWidth", p.propertiesWidth)
 			}
 			p.resizingPanelSide = ""
 			p.finalizeAllDrags(ctx)

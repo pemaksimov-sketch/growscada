@@ -24,6 +24,11 @@ http:
       }
   auth: inherit
 
+docs: |
+  Each port binding must reference an existing Tag accepted by the
+  WidgetType port's type_hint. An empty hint accepts any Tag type.
+  Missing Tags, undeclared ports and incompatible types return 400.
+
 settings:
   encodeUrl: true
   timeout: 0
