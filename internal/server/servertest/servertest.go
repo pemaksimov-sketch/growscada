@@ -117,7 +117,8 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 	})
 	onCommit := repositories.NotifyOnCommit(dispatcher.Notify)
 
-	tagSvc := application.NewTagService(repositories.NewTagRepositoryPostgres(db, onCommit))
+	tagRepo := repositories.NewTagRepositoryPostgres(db, onCommit)
+	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(db, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(db, onCommit)
 	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, tagRepo)
