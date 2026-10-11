@@ -63,6 +63,10 @@ func TestMigrationSplit_CopiesLegacyStateIntoSeparateRuntimeDatabase(t *testing.
 	if err := migrations.Apply(ctx, engineeringDB, runtimeDB); err != nil {
 		t.Fatal(err)
 	}
+	engineeringDB.SetMaxOpenConns(1)
+	if _, err := engineeringDB.ExecContext(ctx, `SET search_path TO engineering, public`); err != nil {
+		t.Fatal(err)
+	}
 	var name, kind, origin string
 	var definitionVersion int
 	if err := engineeringDB.QueryRowContext(ctx, `SELECT name,type,origin,version FROM engineering.tag_definitions WHERE id=$1`, tagID).Scan(&name, &kind, &origin, &definitionVersion); err != nil {
