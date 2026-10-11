@@ -1,125 +1,24 @@
 package project
 
-import "github.com/kipitix/growscada/internal/server/interface/ui/uidto"
+import apiv0 "github.com/kipitix/growscada/contract/api/v0"
 
-// ── DTOs ─────────────────────────────────────────────────────────────────────
-
-type portBindingDTO struct {
-	PortName string `json:"port_name"`
-	TagID    string `json:"tag_id"`
-}
-
-type widgetTypeItem struct {
-	ID            string               `json:"id"`
-	Name          string               `json:"name"`
-	HtmlTemplate  string               `json:"html_template"`
-	Script        string               `json:"script"`
-	DefaultWidth  int                  `json:"default_width"`
-	DefaultHeight int                  `json:"default_height"`
-	InputPorts    []uidto.InputPortDTO `json:"input_ports"`
-}
-
-type getWidgetTypesResponse struct {
-	WidgetTypes []widgetTypeItem `json:"widget_types"`
-}
-
-type sceneItem struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Width          int    `json:"width"`
-	Height         int    `json:"height"`
-	BackgroundHTML string `json:"background_html"`
-	Version        int    `json:"version"`
-}
-
-type getScenesResponse struct {
-	Scenes []sceneItem `json:"scenes"`
-}
-
-type createSceneResponse struct {
-	ID string `json:"id"`
-}
-
-type updateSceneResponse struct {
-	Version int `json:"version"`
-}
-
-// Widget geometry sub-DTOs (match the shapes in contract/api/v0).
-
-type positionDTO struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
-	Z int     `json:"z"`
-}
-
-type sizeDTO struct {
-	Width  int `json:"width"`
-	Height int `json:"height"`
-}
-
-type originDTO struct {
-	X float64 `json:"x"`
-	Y float64 `json:"y"`
-}
-
-type rotationDTO struct {
-	Degrees float64 `json:"degrees"`
-}
-
-type transformMatrixDTO struct {
-	A   float64 `json:"a"`
-	B   float64 `json:"b"`
-	C   float64 `json:"c"`
-	D   float64 `json:"d"`
-	E   float64 `json:"e"`
-	F   float64 `json:"f"`
-	CSS string  `json:"css"`
-}
-
-// widgetItem is the client-side widget representation. Widget has no version
-// of its own — SceneVersion is the owning scene's current version, the sole
-// optimistic-lock boundary for the scene and all its widgets.
-type widgetItem struct {
-	ID              string             `json:"id"`
-	Name            string             `json:"name"`
-	Position        positionDTO        `json:"position"`
-	Size            sizeDTO            `json:"size"`
-	Origin          originDTO          `json:"origin"`
-	Rotation        rotationDTO        `json:"rotation"`
-	TransformMatrix transformMatrixDTO `json:"transform_matrix"`
-	TypeID          string             `json:"type_id"`
-	SceneID         string             `json:"scene_id"`
-	SceneVersion    int                `json:"scene_version"`
-	Labels          []string           `json:"labels"`
-	PortBindings    []portBindingDTO   `json:"port_bindings"`
-}
-
-type getWidgetsResponse struct {
-	Widgets []widgetItem `json:"widgets"`
-}
-
-type createWidgetResponse struct {
-	ID           string `json:"id"`
-	SceneVersion int    `json:"scene_version"`
-}
-
-type updateWidgetResponse struct {
-	SceneVersion int `json:"scene_version"`
-}
-
-type tagItem struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Value   string `json:"value"`
-	Quality string `json:"quality"`
-	Version int    `json:"version"`
-}
-
-type getTagsResponse struct {
-	Tags []tagItem `json:"tags"`
-}
-
-type createTagResponse struct {
-	ID string `json:"id"`
-}
+// UI state uses the public contract directly; no second JSON schema is kept.
+type portBindingDTO = apiv0.PortBinding
+type widgetTypeItem = apiv0.WidgetTypeResponse
+type getWidgetTypesResponse = apiv0.GetWidgetTypesResponse
+type sceneItem = apiv0.SceneResponse
+type getScenesResponse = apiv0.GetScenesResponse
+type createSceneResponse = apiv0.CreateSceneResponse
+type updateSceneResponse = apiv0.UpdateSceneResponse
+type positionDTO = apiv0.PositionResponse
+type sizeDTO = apiv0.SizeResponse
+type originDTO = apiv0.OriginResponse
+type rotationDTO = apiv0.RotationResponse
+type transformMatrixDTO = apiv0.TransformMatrixResponse
+type widgetItem = apiv0.WidgetResponse
+type getWidgetsResponse = apiv0.GetWidgetsResponse
+type createWidgetResponse = apiv0.CreateWidgetResponse
+type updateWidgetResponse = apiv0.UpdateWidgetResponse
+type tagItem = apiv0.TagResponse
+type getTagsResponse = apiv0.GetTagsResponse
+type createTagResponse = apiv0.CreateTagResponse

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Typed UI client (task 23): Project, Library and Operation share `apiclient.Server`, API contract types and a single error-to-toast mapper. An in-memory adapter tests CRUD, optimistic conflicts, draft preservation and selection without a server. HTTP route/header tests and browser CRUD cover the real adapter. With Go 1.26.1, the first refactor build changed WASM from 19,551,181 to 19,514,974 bytes (−36,207 bytes); no API schema change.
+
 ### Fixed
 
 - Reliable widget reconciliation (task 21): WidgetType saves no longer synchronously change Scenes. Each reliable policy has its own durable queue and worker; a failed or slow reconciliation retries after restart without blocking Operation SSE or other subscribers. Scene reconciliation remains idempotent and retries CAS races.

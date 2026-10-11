@@ -104,7 +104,7 @@ func (p *Project) renderTagList() app.UI {
 
 	items := make([]app.UI, len(p.tags))
 	for i, t := range p.tags {
-		id := t.ID
+		id := t.ID.String()
 		name := t.Name
 		tagType := t.Type
 		var item app.HTMLDiv = app.Div().
@@ -150,7 +150,7 @@ func (p *Project) renderTagPropertiesPanel() app.UI {
 
 	var selected tagItem
 	for _, t := range p.tags {
-		if t.ID == p.selectedTagID {
+		if t.ID.String() == p.selectedTagID {
 			selected = t
 			break
 		}
@@ -216,6 +216,7 @@ func (p *Project) renderTagCreateForm() app.UI {
 				Body(
 					app.Label().Style("font-size", "12px").Style("color", "var(--text-2)").Text("Name"),
 					app.Input().
+						ID("new-tag-name").
 						Type("text").
 						Value(p.newTagName).
 						AutoFocus(true).
@@ -236,6 +237,7 @@ func (p *Project) renderTagCreateForm() app.UI {
 				Body(
 					app.Label().Style("font-size", "12px").Style("color", "var(--text-2)").Text("Type"),
 					app.Select().
+						ID("new-tag-type").
 						Style("font-size", "14px").
 						Style("padding", "5px 8px").
 						Style("border", "1px solid var(--border-input)").

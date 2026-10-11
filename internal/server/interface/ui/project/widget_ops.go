@@ -1,11 +1,7 @@
 package project
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"strconv"
+	"context"
 	"strings"
 
 	"github.com/google/uuid"
@@ -13,6 +9,7 @@ import (
 
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
+	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 )
 
 // ── Widget data loading ───────────────────────────────────────────────────────
@@ -21,7 +18,7 @@ import (
 // the sole optimistic-lock boundary shared by the scene and all its widgets.
 func (p *Project) currentSceneVersion() int {
 	for _, sc := range p.scenes {
-		if sc.ID == p.selectedSceneID {
+		if sc.ID.String() == p.selectedSceneID {
 			return sc.Version
 		}
 	}
@@ -33,14 +30,19 @@ func (p *Project) currentSceneVersion() int {
 // mutation is checked against the up-to-date version.
 func (p *Project) applyNewSceneVersion(sceneID string, newVersion int) {
 	for i := range p.scenes {
-		if p.scenes[i].ID == sceneID {
-			p.scenes[i].Version = newVersion
+		if p.scenes[i].ID.String() == sceneID {
+			if newVersion > p.scenes[i].Version {
+				p.scenes[i].Version = newVersion
+			}
+			newVersion = p.scenes[i].Version
 			break
 		}
 	}
 	if p.selectedSceneID == sceneID {
 		for i := range p.widgets {
-			p.widgets[i].SceneVersion = newVersion
+			if newVersion > p.widgets[i].SceneVersion {
+				p.widgets[i].SceneVersion = newVersion
+			}
 		}
 	}
 }
@@ -48,14 +50,12 @@ func (p *Project) applyNewSceneVersion(sceneID string, newVersion int) {
 // ── Widget CRUD ───────────────────────────────────────────────────────────────
 
 func (p *Project) createWidget(ctx app.Context, typeID string, x, y float64) {
-	ctx = p.compoCtx
 	if p.selectedSceneID == "" {
 		return
 	}
-	name := "Widget"
-	width, height := 120, 60
+	name, width, height := "Widget", 120, 60
 	for _, wt := range p.widgetTypes {
-		if wt.ID == typeID {
+		if wt.ID.String() == typeID {
 			name = wt.Name
 			if wt.DefaultWidth > 0 {
 				width = wt.DefaultWidth
@@ -67,105 +67,53 @@ func (p *Project) createWidget(ctx app.Context, typeID string, x, y float64) {
 		}
 	}
 	sceneID := p.selectedSceneID
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets"
-	typeUUID, err := uuid.Parse(typeID)
-	if err != nil {
-		ctx.NewActionWithValue(toast.ActionAdd, toast.ClientError(err))
-		return
-	}
-	body, _ := json.Marshal(apiv0.CreateWidgetRequest{
-		Name:         name,
-		Position:     apiv0.PositionRequest{X: x, Y: y, Z: 0},
-		Size:         apiv0.SizeRequest{Width: width, Height: height},
-		Origin:       apiv0.OriginRequest{X: 0.5, Y: 0.5},
-		Rotation:     apiv0.RotationRequest{Degrees: 0},
-		TypeID:       typeUUID,
-		SceneVersion: p.currentSceneVersion(),
-		Labels:       []string{},
-		PortBindings: []apiv0.PortBinding{},
-	})
-	ctx.Async(func() {
-		resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	version := p.currentSceneVersion()
+	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.CreateWidgetResponse, error) {
+		sceneUUID, err := uuid.Parse(sceneID)
 		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
+			return apiv0.CreateWidgetResponse{}, err
 		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
+		typeUUID, err := uuid.Parse(typeID)
+		if err != nil {
+			return apiv0.CreateWidgetResponse{}, err
 		}
-		defer resp.Body.Close()
-		var result createWidgetResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
+		return p.client.CreateWidget(ctx, sceneUUID, apiv0.CreateWidgetRequest{Name: name, Position: apiv0.PositionRequest{X: x, Y: y}, Size: apiv0.SizeRequest{Width: width, Height: height}, Origin: apiv0.OriginRequest{X: 0.5, Y: 0.5}, TypeID: typeUUID, SceneVersion: version, Labels: []string{}, PortBindings: []apiv0.PortBinding{}})
+	}, func(result apiv0.CreateWidgetResponse) {
+		p.applyNewSceneVersion(sceneID, result.SceneVersion)
+		if p.selectedSceneID == sceneID {
+			p.selectedWidgetID = result.ID.String()
+			p.tasks.Store("project:widgetID", p.selectedWidgetID)
+			p.syncEditingFields(widgetItem{Name: name, Position: positionDTO{X: x, Y: y}, Size: sizeDTO{Width: width, Height: height}, Origin: originDTO{X: 0.5, Y: 0.5}})
 		}
-		ctx.Dispatch(func(ctx app.Context) {
-			p.applyNewSceneVersion(sceneID, result.SceneVersion)
-			p.selectedWidgetID = result.ID
-			ctx.LocalStorage().Set("project:widgetID", result.ID)
-			p.editingWidgetName = name
-			p.editingPosX = fmt.Sprintf("%.1f", x)
-			p.editingPosY = fmt.Sprintf("%.1f", y)
-			p.editingPosZ = "0"
-			p.editingWidth = strconv.Itoa(width)
-			p.editingHeight = strconv.Itoa(height)
-			p.editingOriginX = "0.500"
-			p.editingOriginY = "0.500"
-			p.editingRotation = "0.0"
-			p.loadWidgets(ctx)
-		})
-	})
+		p.loadWidgets(p.compoCtx)
+	}, func() { p.loadScene(p.compoCtx, sceneID); p.loadWidgets(p.compoCtx) })
 }
-
 func (p *Project) deleteWidget(ctx app.Context, widgetID string) {
-	ctx = p.compoCtx
 	sceneID := p.selectedSceneID
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets/" + widgetID
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodDelete, url, nil)
-		resp, err := http.DefaultClient.Do(req)
+	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.WidgetResponse, error) {
+		sc, err := uuid.Parse(sceneID)
 		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
+			return apiv0.WidgetResponse{}, err
 		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
+		id, err := uuid.Parse(widgetID)
+		if err != nil {
+			return apiv0.WidgetResponse{}, err
 		}
-		defer resp.Body.Close()
-		var result widgetItem
-		_ = json.NewDecoder(resp.Body).Decode(&result)
-		ctx.Dispatch(func(ctx app.Context) {
-			if result.SceneVersion > 0 {
-				p.applyNewSceneVersion(sceneID, result.SceneVersion)
+		return p.client.DeleteWidget(ctx, sc, id)
+	}, func(result apiv0.WidgetResponse) {
+		p.applyNewSceneVersion(sceneID, result.SceneVersion)
+		if p.selectedWidgetID == widgetID {
+			p.clearWidgetSelection(p.compoCtx)
+		}
+		filtered := make([]widgetItem, 0, len(p.widgets))
+		for _, w := range p.widgets {
+			if w.ID.String() != widgetID {
+				filtered = append(filtered, w)
 			}
-			if p.selectedWidgetID == widgetID {
-				p.clearWidgetSelection(ctx)
-			}
-			filtered := p.widgets[:0]
-			for _, w := range p.widgets {
-				if w.ID != widgetID {
-					filtered = append(filtered, w)
-				}
-			}
-			p.widgets = filtered
-		})
-	})
+		}
+		p.widgets = filtered
+	}, nil)
 }
-
 func (p *Project) saveWidgetName(ctx app.Context) {
 	if strings.TrimSpace(p.editingWidgetName) == "" {
 		return
@@ -218,9 +166,14 @@ func (p *Project) bindPort(ctx app.Context, portName, tagID string) {
 		return
 	}
 	found := false
+	tagUUID, err := uuid.Parse(tagID)
+	if err != nil {
+		p.compoCtx.NewActionWithValue(toast.ActionAdd, toast.ClientError(err))
+		return
+	}
 	for i, b := range p.widgets[idx].PortBindings {
 		if b.PortName == portName {
-			p.widgets[idx].PortBindings[i].TagID = tagID
+			p.widgets[idx].PortBindings[i].TagID = tagUUID
 			found = true
 			break
 		}
@@ -228,7 +181,7 @@ func (p *Project) bindPort(ctx app.Context, portName, tagID string) {
 	if !found {
 		p.widgets[idx].PortBindings = append(p.widgets[idx].PortBindings, portBindingDTO{
 			PortName: portName,
-			TagID:    tagID,
+			TagID:    tagUUID,
 		})
 	}
 	p.putWidget(ctx, p.widgets[idx])
@@ -253,69 +206,23 @@ func (p *Project) unbindPort(ctx app.Context, portName string) {
 }
 
 func (p *Project) putWidget(ctx app.Context, w widgetItem) {
-	ctx = p.compoCtx
 	sceneID := p.selectedSceneID
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets/" + w.ID
-	typeUUID, err := uuid.Parse(w.TypeID)
-	if err != nil {
-		ctx.NewActionWithValue(toast.ActionAdd, toast.ClientError(err))
-		return
+	input := apiv0.UpdateWidgetRequest{Name: w.Name, Position: apiv0.PositionRequest(w.Position), Size: apiv0.SizeRequest(w.Size), Origin: apiv0.OriginRequest(w.Origin), Rotation: apiv0.RotationRequest(w.Rotation), TypeID: w.TypeID, PortBindings: w.PortBindings, Labels: w.Labels, SceneVersion: p.currentSceneVersion()}
+	if input.PortBindings == nil {
+		input.PortBindings = []apiv0.PortBinding{}
 	}
-	portBindings := make([]apiv0.PortBinding, 0, len(w.PortBindings))
-	for _, b := range w.PortBindings {
-		tagID, err := uuid.Parse(b.TagID)
+	if input.Labels == nil {
+		input.Labels = []string{}
+	}
+	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.UpdateWidgetResponse, error) {
+		id, err := uuid.Parse(sceneID)
 		if err != nil {
-			ctx.NewActionWithValue(toast.ActionAdd, toast.ClientError(err))
-			return
+			return apiv0.UpdateWidgetResponse{}, err
 		}
-		portBindings = append(portBindings, apiv0.PortBinding{PortName: b.PortName, TagID: tagID})
-	}
-	labels := w.Labels
-	if labels == nil {
-		labels = []string{}
-	}
-	body, err := json.Marshal(apiv0.UpdateWidgetRequest{
-		Name:         w.Name,
-		Position:     apiv0.PositionRequest(w.Position),
-		Size:         apiv0.SizeRequest(w.Size),
-		Origin:       apiv0.OriginRequest(w.Origin),
-		Rotation:     apiv0.RotationRequest(w.Rotation),
-		TypeID:       typeUUID,
-		Labels:       labels,
-		PortBindings: portBindings,
-		SceneVersion: p.currentSceneVersion(),
-	})
-	if err != nil {
-		ctx.NewActionWithValue(toast.ActionAdd, toast.ClientError(err))
-		p.loadWidgets(ctx)
-		return
-	}
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-				p.loadWidgets(ctx)
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-				p.loadWidgets(ctx)
-			})
-			return
-		}
-		defer resp.Body.Close()
-		var result updateWidgetResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.SceneVersion > 0 {
-			ctx.Dispatch(func(ctx app.Context) {
-				p.applyNewSceneVersion(sceneID, result.SceneVersion)
-			})
-		}
+		return p.client.UpdateWidget(ctx, id, w.ID, input)
+	}, func(result apiv0.UpdateWidgetResponse) { p.applyNewSceneVersion(sceneID, result.SceneVersion) }, func() {
+		p.loadScene(p.compoCtx, sceneID)
+		p.loadWidgets(p.compoCtx)
 	})
 }
 
@@ -329,7 +236,7 @@ type widgetGeometry struct {
 	Rotation rotationDTO
 }
 
-func (w widgetItem) geometry() widgetGeometry {
+func geometryOf(w widgetItem) widgetGeometry {
 	return widgetGeometry{Position: w.Position, Size: w.Size, Origin: w.Origin, Rotation: w.Rotation}
 }
 
@@ -348,7 +255,7 @@ func (p *Project) draggedWidgetID() string {
 // click (no move) or a drag back to the start leaves nothing to save, and
 // saving it anyway would bump the scene version for every other client.
 func (p *Project) dragChangedWidget(w widgetItem) bool {
-	return p.dragDidMove && w.geometry() != p.dragStartGeometry
+	return p.dragDidMove && geometryOf(w) != p.dragStartGeometry
 }
 
 func (p *Project) finalizeAllDrags(ctx app.Context) {
@@ -378,7 +285,7 @@ func (p *Project) finalizeAllDrags(ctx app.Context) {
 
 func (p *Project) saveDraggedWidget(ctx app.Context, id string) {
 	for i := range p.widgets {
-		if p.widgets[i].ID == id {
+		if p.widgets[i].ID.String() == id {
 			if !p.dragChangedWidget(p.widgets[i]) {
 				break
 			}

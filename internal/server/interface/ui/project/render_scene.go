@@ -29,7 +29,7 @@ func (p *Project) renderSceneTabs() app.UI {
 
 	for _, sc := range p.scenes {
 		sc := sc
-		active := p.selectedSceneID == sc.ID
+		active := p.selectedSceneID == sc.ID.String()
 
 		var bg, borderBottom, color, fontWeight string
 		if active {
@@ -45,7 +45,7 @@ func (p *Project) renderSceneTabs() app.UI {
 		}
 
 		var tabInner app.UI
-		if p.editingSceneID == sc.ID {
+		if p.editingSceneID == sc.ID.String() {
 			tabInner = app.Input().
 				Type("text").
 				Value(p.editingSceneName).
@@ -83,16 +83,17 @@ func (p *Project) renderSceneTabs() app.UI {
 						Style("cursor", "pointer").
 						Text(sc.Name).
 						OnClick(func(ctx app.Context, e app.Event) {
-							p.selectedSceneID = sc.ID
-							ctx.LocalStorage().Set("project:sceneID", sc.ID)
+							p.selectedSceneID = sc.ID.String()
+							ctx.LocalStorage().Set("project:sceneID", sc.ID.String())
 							p.clearWidgetSelection(ctx)
 							p.syncSceneEditingFields()
 							p.loadWidgets(ctx)
 						}).
 						OnDblClick(func(ctx app.Context, e app.Event) {
-							p.startEditingScene(sc.ID, sc.Name)
+							p.startEditingScene(sc.ID.String(), sc.Name)
 						}),
 					app.Span().
+						Attr("aria-label", "Delete scene "+sc.Name).
 						Style("cursor", "pointer").
 						Style("font-size", "14px").
 						Style("line-height", "1").
@@ -101,7 +102,7 @@ func (p *Project) renderSceneTabs() app.UI {
 						Text("×").
 						OnClick(func(ctx app.Context, e app.Event) {
 							e.Call("stopPropagation")
-							p.confirmDeleteScene(ctx, sc.ID, sc.Name)
+							p.confirmDeleteScene(ctx, sc.ID.String(), sc.Name)
 						}),
 				)
 		}
@@ -121,6 +122,8 @@ func (p *Project) renderSceneTabs() app.UI {
 	}
 
 	tabs = append(tabs, app.Div().
+		ID("create-scene").
+		Attr("aria-label", "Create scene").
 		Style("display", "flex").
 		Style("align-items", "center").
 		Style("padding", "6px 10px").
@@ -154,9 +157,11 @@ func (p *Project) renderSceneCanvas() app.UI {
 	}
 
 	sceneWidth, sceneHeight := 1920, 1080
+	sceneVersion := 0
 	backgroundHTML := ""
 	for _, sc := range p.scenes {
-		if sc.ID == p.selectedSceneID {
+		if sc.ID.String() == p.selectedSceneID {
+			sceneVersion = sc.Version
 			backgroundHTML = sc.BackgroundHTML
 			if sc.Width > 0 {
 				sceneWidth = sc.Width
@@ -198,6 +203,8 @@ func (p *Project) renderSceneCanvas() app.UI {
 	}
 
 	canvas := app.Div().
+		ID("scene-canvas").
+		Attr("data-scene-version", sceneVersion).
 		Style("position", "relative").
 		Style("width", fmt.Sprintf("%dpx", sceneWidth)).
 		Style("height", fmt.Sprintf("%dpx", sceneHeight)).
@@ -256,7 +263,7 @@ func (p *Project) renderSceneCanvas() app.UI {
 //   - Blue circle + line: rotation handle (drag to rotate)
 //   - Blue square corner: SE resize handle (drag to resize)
 func (p *Project) renderWidget(w widgetItem, textMuted string) app.UI {
-	wid := w.ID
+	wid := w.ID.String()
 	isSelected := p.selectedWidgetID == wid
 
 	// Local pixel position of the origin anchor within the widget.
@@ -264,7 +271,7 @@ func (p *Project) renderWidget(w widgetItem, textMuted string) app.UI {
 	oy := w.Origin.Y * float64(w.Size.Height)
 
 	// ── Widget content: iframe preview + transparent drag overlay ───────────
-	wt, wtOk := p.widgetTypeByID(w.TypeID)
+	wt, wtOk := p.widgetTypeByID(w.TypeID.String())
 	var srcdoc string
 	if wtOk {
 		srcdoc = uiutil.BuildSrcdoc(wt.HtmlTemplate, wt.Script, uiutil.PreviewInputs(p.simInputs[wid], wt.InputPorts), wt.InputPorts, uiutil.SceneWidgetBackground)
@@ -335,6 +342,7 @@ func (p *Project) renderWidget(w widgetItem, textMuted string) app.UI {
 
 		// Rotation handle circle (above the origin in local space)
 		rotHandle := app.Div().
+			Attr("aria-label", "Rotate widget").
 			Style("position", "absolute").
 			Style("left", fmt.Sprintf("%.1fpx", ox-8)).
 			Style("top", fmt.Sprintf("%.1fpx", oy-rotHandleDist-8)).
@@ -410,6 +418,7 @@ func (p *Project) renderWidget(w widgetItem, textMuted string) app.UI {
 
 		// SE resize handle: small square at bottom-right corner
 		resizeHandle := app.Div().
+			Attr("aria-label", "Resize widget").
 			Style("position", "absolute").
 			Style("right", "0").
 			Style("bottom", "0").

@@ -1,6 +1,9 @@
 package library
 
 import (
+	"context"
+	"github.com/kipitix/growscada/internal/apiclient"
+	"net/http"
 	"slices"
 
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
@@ -22,7 +25,8 @@ type Library struct {
 	// would lose the result and leave a Reloader loading forever.
 	compoCtx          app.Context
 	ThemeMode         string // exported so go-app detects theme changes and re-renders
-	apiServerURL      string
+	client            apiclient.Server
+	tasks             uiutil.Tasks
 	widgetTypes       []widgetTypeItem
 	loading           bool
 	reloader          uiutil.Reloader
@@ -42,11 +46,12 @@ type Library struct {
 }
 
 func NewLibrary(apiServerURL string) *Library {
-	return &Library{apiServerURL: apiServerURL}
+	return &Library{client: apiclient.New(apiServerURL, http.DefaultClient)}
 }
 
 func (l *Library) OnMount(ctx app.Context) {
 	l.compoCtx = ctx
+	l.tasks = uiutil.BrowserTasks(ctx)
 	ctx.ObserveState("theme", &l.ThemeMode)
 	ctx.LocalStorage().Get("library:selectedID", &l.selectedID)
 	l.loadList(ctx)
@@ -63,10 +68,10 @@ func (l *Library) OnMount(ctx app.Context) {
 // loadList (re)loads the widget type list; concurrent requests are coalesced.
 func (l *Library) loadList(ctx app.Context) {
 	l.loading = true
-	uiutil.LoadJSON(l.compoCtx, &l.reloader, uiutil.JSONLoad[getWidgetTypesResponse]{
-		URL: l.apiServerURL + apiv0.PathPrefix + "/widget-types", Reload: l.loadList,
+	uiutil.Load(l.tasks, &l.reloader, uiutil.LoadRequest[[]apiv0.WidgetTypeResponse]{
+		Call: func(ctx context.Context) ([]apiv0.WidgetTypeResponse, error) { return l.client.ListWidgetTypes(ctx) }, Reload: func() { l.loadList(l.compoCtx) },
 		Finished: func() { l.loading = false },
-		Apply:    func(ctx app.Context, result getWidgetTypesResponse) { l.setWidgetTypes(ctx, result.WidgetTypes) },
+		Apply:    func(result []apiv0.WidgetTypeResponse) { l.setWidgetTypes(l.compoCtx, result) },
 	})
 }
 
@@ -84,7 +89,7 @@ func (l *Library) setWidgetTypes(ctx app.Context, items []widgetTypeItem) {
 	switch {
 	case !exists:
 		l.clearSelection()
-		ctx.LocalStorage().Set("library:selectedID", "")
+		l.tasks.Store("library:selectedID", "")
 	case !known:
 		l.selectItem(l.selectedID)
 	default:
@@ -103,7 +108,7 @@ func (l *Library) clearSelection() {
 
 func (l *Library) findItem(id string) (widgetTypeItem, bool) {
 	for _, it := range l.widgetTypes {
-		if it.ID == id {
+		if it.ID.String() == id {
 			return it, true
 		}
 	}
@@ -126,7 +131,7 @@ func (l *Library) mergeSelected(old, current widgetTypeItem) {
 
 func (l *Library) selectItem(id string) {
 	for _, it := range l.widgetTypes {
-		if it.ID == id {
+		if it.ID.String() == id {
 			l.selectedID = id
 			l.editedName = it.Name
 			l.editedHTML = it.HtmlTemplate

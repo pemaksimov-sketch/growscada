@@ -2,7 +2,9 @@ package project
 
 import (
 	"fmt"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"math"
+	"net/http"
 	"strconv"
 
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
@@ -26,9 +28,10 @@ type Project struct {
 	// element that fired the event, and go-app silently drops Dispatch once that
 	// element is unmounted (e.g. a tab that turns into its rename input), which
 	// would lose the result and leave a Reloader loading forever.
-	compoCtx     app.Context
-	ThemeMode    string // exported so go-app detects theme changes and re-renders
-	apiServerURL string
+	compoCtx  app.Context
+	ThemeMode string // exported so go-app detects theme changes and re-renders
+	client    apiclient.Server
+	tasks     uiutil.Tasks
 
 	activeSubTab projectSubTab
 
@@ -140,11 +143,12 @@ type Project struct {
 }
 
 func NewProject(apiServerURL string) *Project {
-	return &Project{apiServerURL: apiServerURL, activeSubTab: subTabScenes}
+	return &Project{client: apiclient.New(apiServerURL, http.DefaultClient), activeSubTab: subTabScenes}
 }
 
 func (p *Project) OnMount(ctx app.Context) {
 	p.compoCtx = ctx
+	p.tasks = uiutil.BrowserTasks(ctx)
 	ctx.ObserveState("theme", &p.ThemeMode)
 	p.simInputs = make(map[string]map[string]string)
 	p.widgetTypeWidth = 180
@@ -176,9 +180,9 @@ func (p *Project) OnMount(ctx app.Context) {
 
 func (p *Project) selectWidget(ctx app.Context, id string) {
 	p.selectedWidgetID = id
-	ctx.LocalStorage().Set("project:widgetID", id)
+	p.tasks.Store("project:widgetID", id)
 	for _, w := range p.widgets {
-		if w.ID == id {
+		if w.ID.String() == id {
 			p.syncEditingFields(w)
 			break
 		}
@@ -196,12 +200,12 @@ func (p *Project) clearWidgetSelection(ctx app.Context) {
 	p.editingOriginX = ""
 	p.editingOriginY = ""
 	p.editingRotation = ""
-	ctx.LocalStorage().Set("project:widgetID", "")
+	p.tasks.Store("project:widgetID", "")
 }
 
 func (p *Project) selectedWidgetIdx() int {
 	for i, w := range p.widgets {
-		if w.ID == p.selectedWidgetID {
+		if w.ID.String() == p.selectedWidgetID {
 			return i
 		}
 	}
@@ -214,7 +218,7 @@ func (p *Project) selectedWidgetIdx() int {
 // leaving `w` stale across drags.
 func (p *Project) widgetByID(id string) (widgetItem, bool) {
 	for _, w := range p.widgets {
-		if w.ID == id {
+		if w.ID.String() == id {
 			return w, true
 		}
 	}
@@ -223,7 +227,7 @@ func (p *Project) widgetByID(id string) (widgetItem, bool) {
 
 func (p *Project) widgetTypeByID(id string) (widgetTypeItem, bool) {
 	for _, wt := range p.widgetTypes {
-		if wt.ID == id {
+		if wt.ID.String() == id {
 			return wt, true
 		}
 	}
@@ -274,7 +278,7 @@ func (p *Project) subTab(label string, tab projectSubTab) app.UI {
 		Text(label).
 		OnClick(func(ctx app.Context, e app.Event) {
 			p.activeSubTab = tab
-			ctx.LocalStorage().Set("project:subTab", string(tab))
+			p.tasks.Store("project:subTab", string(tab))
 		})
 	if active {
 		return el.
@@ -328,9 +332,9 @@ func (p *Project) renderScenesContent() app.UI {
 			// Mouse button released outside this element — cancel all drags.
 			if e.Get("buttons").Int() == 0 {
 				if p.resizingPanelSide == "left" {
-					ctx.LocalStorage().Set("project:widgetTypeWidth", p.widgetTypeWidth)
+					p.tasks.Store("project:widgetTypeWidth", p.widgetTypeWidth)
 				} else if p.resizingPanelSide == "right" {
-					ctx.LocalStorage().Set("project:propertiesWidth", p.propertiesWidth)
+					p.tasks.Store("project:propertiesWidth", p.propertiesWidth)
 				}
 				p.resizingPanelSide = ""
 				p.finalizeAllDrags(ctx)
@@ -368,7 +372,7 @@ func (p *Project) renderScenesContent() app.UI {
 			if id := p.draggedWidgetID(); id != "" {
 				if !p.dragDidMove {
 					if w, ok := p.widgetByID(id); ok {
-						p.dragStartGeometry = w.geometry()
+						p.dragStartGeometry = geometryOf(w)
 					}
 				}
 				p.dragDidMove = true
@@ -379,7 +383,7 @@ func (p *Project) renderScenesContent() app.UI {
 				dx := clientX - p.dragStartCliX
 				dy := clientY - p.dragStartCliY
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.draggingWidgetID {
+					if p.widgets[i].ID.String() == p.draggingWidgetID {
 						p.widgets[i].Position.X = p.dragStartPosX + dx
 						p.widgets[i].Position.Y = p.dragStartPosY + dy
 						if p.selectedWidgetID == p.draggingWidgetID {
@@ -411,7 +415,7 @@ func (p *Project) renderScenesContent() app.UI {
 				newPosX := p.originStartPosX - dOx*(1-cosA) - dOy*sinA
 				newPosY := p.originStartPosY - dOy*(1-cosA) + dOx*sinA
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.draggingOriginID {
+					if p.widgets[i].ID.String() == p.draggingOriginID {
 						p.widgets[i].Origin.X = newOX
 						p.widgets[i].Origin.Y = newOY
 						p.widgets[i].Position.X = newPosX
@@ -438,7 +442,7 @@ func (p *Project) renderScenesContent() app.UI {
 					newDeg += 360
 				}
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.rotatingWidgetID {
+					if p.widgets[i].ID.String() == p.rotatingWidgetID {
 						p.widgets[i].Rotation.Degrees = newDeg
 						if p.selectedWidgetID == p.rotatingWidgetID {
 							p.editingRotation = fmt.Sprintf("%.1f", newDeg)
@@ -476,7 +480,7 @@ func (p *Project) renderScenesContent() app.UI {
 				newPosX := p.resizeStartE - newOx*(1-cosA) - sinA*newOy
 				newPosY := p.resizeStartF + sinA*newOx - newOy*(1-cosA)
 				for i := range p.widgets {
-					if p.widgets[i].ID == p.resizingWidgetID {
+					if p.widgets[i].ID.String() == p.resizingWidgetID {
 						p.widgets[i].Size.Width = newW
 						p.widgets[i].Size.Height = newH
 						p.widgets[i].Position.X = newPosX
@@ -494,9 +498,9 @@ func (p *Project) renderScenesContent() app.UI {
 		}).
 		OnMouseUp(func(ctx app.Context, e app.Event) {
 			if p.resizingPanelSide == "left" {
-				ctx.LocalStorage().Set("project:widgetTypeWidth", p.widgetTypeWidth)
+				p.tasks.Store("project:widgetTypeWidth", p.widgetTypeWidth)
 			} else if p.resizingPanelSide == "right" {
-				ctx.LocalStorage().Set("project:propertiesWidth", p.propertiesWidth)
+				p.tasks.Store("project:propertiesWidth", p.propertiesWidth)
 			}
 			p.resizingPanelSide = ""
 			p.finalizeAllDrags(ctx)

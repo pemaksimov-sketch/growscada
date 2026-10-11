@@ -2,13 +2,14 @@ package project
 
 import (
 	"encoding/json"
+	"github.com/google/uuid"
 	"slices"
 )
 
 func decodeTagUpdate(raw json.RawMessage) (tagItem, bool) {
 	var tag tagItem
 	err := json.Unmarshal(raw, &tag)
-	return tag, err == nil && tag.ID != "" && tag.Version > 0
+	return tag, err == nil && tag.ID != uuid.Nil && tag.Version > 0
 }
 
 // A list response can race an event. Keep the highest known version for
@@ -16,11 +17,11 @@ func decodeTagUpdate(raw json.RawMessage) (tagItem, bool) {
 func mergeTagList(known, loaded []tagItem) []tagItem {
 	byID := make(map[string]tagItem, len(known))
 	for _, tag := range known {
-		byID[tag.ID] = tag
+		byID[tag.ID.String()] = tag
 	}
 	merged := slices.Clone(loaded)
 	for i, tag := range merged {
-		if current, exists := byID[tag.ID]; exists && current.Version > tag.Version {
+		if current, exists := byID[tag.ID.String()]; exists && current.Version > tag.Version {
 			merged[i] = current
 		}
 	}
@@ -29,7 +30,7 @@ func mergeTagList(known, loaded []tagItem) []tagItem {
 
 func applyTagUpdate(tags []tagItem, updated tagItem) ([]tagItem, bool) {
 	for i, tag := range tags {
-		if tag.ID != updated.ID {
+		if tag.ID.String() != updated.ID.String() {
 			continue
 		}
 		if tag.Version >= updated.Version {

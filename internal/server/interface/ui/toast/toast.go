@@ -2,7 +2,9 @@ package toast
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"io"
 	"net/http"
 	"strings"
@@ -13,6 +15,20 @@ import (
 
 // ActionAdd is the action name for pushing a new toast notification.
 const ActionAdd = "toast.add"
+
+// FromClientError is the sole client-error to toast translation. Keep server
+// Problem Details and the request method; transport errors have no HTTP code.
+func FromClientError(err error) Problem {
+	var status *apiclient.StatusError
+	if errors.As(err, &status) {
+		title := status.Title
+		if title == "" {
+			title = http.StatusText(status.Status)
+		}
+		return Problem{Title: title, Status: status.Status, Detail: status.Detail, Instance: status.Instance, Method: status.Method}
+	}
+	return NetworkError(err)
+}
 
 // Problem mirrors the RFC 9457 fields displayed in a toast.
 type Problem struct {

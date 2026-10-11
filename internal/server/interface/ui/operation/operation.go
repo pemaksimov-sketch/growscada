@@ -10,7 +10,9 @@ package operation
 import apiv0 "github.com/kipitix/growscada/contract/api/v0"
 
 import (
+	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
+	"net/http"
 
 	"github.com/kipitix/growscada/internal/server/interface/ui/eventlog"
 	"github.com/kipitix/growscada/internal/server/interface/ui/livescene"
@@ -23,9 +25,10 @@ type Operation struct {
 	app.Compo
 	// compoCtx is the component's own context, captured in OnMount; async
 	// results are dispatched through it (see project.Project.compoCtx).
-	compoCtx     app.Context
-	ThemeMode    string // exported so go-app detects theme changes and re-renders
-	apiServerURL string
+	compoCtx  app.Context
+	ThemeMode string // exported so go-app detects theme changes and re-renders
+	client    apiclient.Server
+	tasks     uiutil.Tasks
 
 	scenes      []livescene.Scene
 	widgetTypes map[string]livescene.WidgetType
@@ -46,11 +49,12 @@ type Operation struct {
 }
 
 func NewOperation(apiServerURL string) *Operation {
-	return &Operation{apiServerURL: apiServerURL}
+	return &Operation{client: apiclient.New(apiServerURL, http.DefaultClient)}
 }
 
 func (o *Operation) OnMount(ctx app.Context) {
 	o.compoCtx = ctx
+	o.tasks = uiutil.BrowserTasks(ctx)
 	o.widgetTypes = map[string]livescene.WidgetType{}
 	o.tags = map[string]livescene.Tag{}
 	ctx.ObserveState("theme", &o.ThemeMode)
@@ -100,7 +104,7 @@ func (o *Operation) selectScene(ctx app.Context, sceneID string) {
 		return
 	}
 	o.selectedSceneID = sceneID
-	ctx.LocalStorage().Set(sceneStorageKey, sceneID)
+	o.tasks.Store(sceneStorageKey, sceneID)
 	o.loadWidgets(ctx)
 }
 
@@ -122,7 +126,7 @@ func (o *Operation) renderSceneTabs() app.UI {
 	tabs := make([]app.UI, 0, len(o.scenes))
 	for _, sc := range o.scenes {
 		sc := sc
-		active := o.selectedSceneID == sc.ID
+		active := o.selectedSceneID == sc.ID.String()
 
 		bg, borderBottom, color, fontWeight := "var(--bg-hover)", "2px solid transparent", "var(--text-2)", "normal"
 		if active {
@@ -143,7 +147,7 @@ func (o *Operation) renderSceneTabs() app.UI {
 			Style("white-space", "nowrap").
 			Text(sc.Name).
 			OnClick(func(ctx app.Context, e app.Event) {
-				o.selectScene(ctx, sc.ID)
+				o.selectScene(ctx, sc.ID.String())
 			}))
 	}
 
@@ -172,7 +176,7 @@ func (o *Operation) renderScene() app.UI {
 	}
 
 	var widgets []livescene.Widget
-	if o.widgetsSceneID == sc.ID {
+	if o.widgetsSceneID == sc.ID.String() {
 		widgets = o.widgets
 	}
 	return &livescene.View{
@@ -187,7 +191,7 @@ func (o *Operation) renderScene() app.UI {
 
 func (o *Operation) findScene(id string) (livescene.Scene, bool) {
 	for _, sc := range o.scenes {
-		if sc.ID == id {
+		if sc.ID.String() == id {
 			return sc, true
 		}
 	}

@@ -1,118 +1,60 @@
 package project
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"fmt"
-	"net/http"
-	"strconv"
-
-	"github.com/maxence-charriere/go-app/v10/pkg/app"
-
+	"github.com/google/uuid"
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
+	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
+	"github.com/maxence-charriere/go-app/v10/pkg/app"
+	"strconv"
 )
 
-// ── Scene CRUD ────────────────────────────────────────────────────────────────
-
 func (p *Project) createScene(ctx app.Context) {
-	ctx = p.compoCtx
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes"
-	body, _ := json.Marshal(apiv0.CreateSceneRequest{Name: "New Scene", Width: 1920, Height: 1080})
-	ctx.Async(func() {
-		resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
-		}
-		defer resp.Body.Close()
-		var result createSceneResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
-		}
-		ctx.Dispatch(func(ctx app.Context) {
-			p.selectedSceneID = result.ID
-			p.widgets = nil
-			ctx.LocalStorage().Set("project:sceneID", result.ID)
-			p.clearWidgetSelection(ctx)
-			p.loadScenes(ctx)
-			p.loadWidgets(ctx)
-		})
-	})
+	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.CreateSceneResponse, error) {
+		return p.client.CreateScene(ctx, apiv0.CreateSceneRequest{Name: "New Scene", Width: 1920, Height: 1080})
+	}, func(result apiv0.CreateSceneResponse) {
+		p.selectedSceneID = result.ID.String()
+		p.widgets = nil
+		p.tasks.Store("project:sceneID", p.selectedSceneID)
+		p.clearWidgetSelection(p.compoCtx)
+		p.loadScenes(p.compoCtx)
+		p.loadWidgets(p.compoCtx)
+	}, nil)
 }
-
-// confirmDeleteScene fetches the scene's widget count so the confirmation
-// dialog can warn the user how much they are about to delete along with the
-// scene, then deletes it if they confirm.
 func (p *Project) confirmDeleteScene(ctx app.Context, sceneID, sceneName string) {
-	ctx = p.compoCtx
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets"
-	ctx.Async(func() {
-		resp, err := http.Get(url)
-		widgetCount := -1 // unknown, e.g. on network error
-		if err == nil && resp.StatusCode < 400 {
-			defer resp.Body.Close()
-			var result getWidgetsResponse
-			if json.NewDecoder(resp.Body).Decode(&result) == nil {
-				widgetCount = len(result.Widgets)
-			}
+	confirm := func(count int) {
+		message := fmt.Sprintf("Delete scene %q?", sceneName)
+		if count > 0 {
+			message = fmt.Sprintf("Scene %q contains %d widget(s). Delete the scene and all of its widgets?", sceneName, count)
 		}
-		ctx.Dispatch(func(ctx app.Context) {
-			message := fmt.Sprintf("Delete scene %q?", sceneName)
-			if widgetCount > 0 {
-				message = fmt.Sprintf("Scene %q contains %d widget(s). Delete the scene and all of its widgets?", sceneName, widgetCount)
-			}
-			if !app.Window().Call("confirm", message).Bool() {
-				return
-			}
-			p.deleteScene(ctx, sceneID)
-		})
-	})
-}
-
-func (p *Project) deleteScene(ctx app.Context, sceneID string) {
-	ctx = p.compoCtx
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodDelete, url, nil)
-		resp, err := http.DefaultClient.Do(req)
+		if app.Window().Call("confirm", message).Bool() {
+			p.deleteScene(p.compoCtx, sceneID)
+		}
+	}
+	tasks := p.tasks
+	tasks.Report = nil // Counting is advisory: still ask if it fails.
+	uiutil.Request(tasks, func(ctx context.Context) ([]apiv0.WidgetResponse, error) {
+		id, err := uuid.Parse(sceneID)
 		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-			})
-			return
+			return nil, err
 		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-			})
-			return
-		}
-		resp.Body.Close()
-		ctx.Dispatch(func(ctx app.Context) {
-			p.loadScenes(ctx)
-		})
-	})
+		return p.client.ListWidgets(ctx, id)
+	}, func(items []apiv0.WidgetResponse) { confirm(len(items)) }, func() { confirm(-1) })
 }
-
-// syncSceneEditingFields populates the Properties-panel editing state from
-// the currently selected scene.
+func (p *Project) deleteScene(ctx app.Context, sceneID string) {
+	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.SceneResponse, error) {
+		id, err := uuid.Parse(sceneID)
+		if err != nil {
+			return apiv0.SceneResponse{}, err
+		}
+		return p.client.DeleteScene(ctx, id)
+	}, func(apiv0.SceneResponse) { p.loadScenes(p.compoCtx) }, nil)
+}
 func (p *Project) syncSceneEditingFields() {
 	for _, sc := range p.scenes {
-		if sc.ID == p.selectedSceneID {
+		if sc.ID.String() == p.selectedSceneID {
 			p.editingScenePropsName = sc.Name
 			p.editingScenePropsWidth = strconv.Itoa(sc.Width)
 			p.editingScenePropsHeight = strconv.Itoa(sc.Height)
@@ -125,164 +67,69 @@ func (p *Project) syncSceneEditingFields() {
 	p.editingScenePropsHeight = ""
 	p.editingScenePropsBG = ""
 }
-
+func (p *Project) updateScene(sc sceneItem) {
+	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.UpdateSceneResponse, error) {
+		return p.client.UpdateScene(ctx, sc.ID, apiv0.UpdateSceneRequest{Name: sc.Name, Width: sc.Width, Height: sc.Height, BackgroundHTML: sc.BackgroundHTML, Version: sc.Version})
+	}, func(result apiv0.UpdateSceneResponse) {
+		if result.Version > 0 {
+			p.applyNewSceneVersion(sc.ID.String(), result.Version)
+		}
+	}, func() { p.loadScenes(p.compoCtx) })
+}
 func (p *Project) saveSceneProperties(ctx app.Context) {
-	ctx = p.compoCtx
 	if p.selectedSceneID == "" {
 		return
 	}
-	id := p.selectedSceneID
-	name := p.editingScenePropsName
 	var nf numberFields
 	w := nf.int("width", p.editingScenePropsWidth)
 	h := nf.int("height", p.editingScenePropsHeight)
 	if nf.err != nil {
-		ctx.NewActionWithValue(toast.ActionAdd, toast.ClientError(nf.err))
+		p.compoCtx.NewActionWithValue(toast.ActionAdd, toast.ClientError(nf.err))
 		p.syncSceneEditingFields()
 		return
 	}
-	bg := p.editingScenePropsBG
-
-	var sc sceneItem
-	for _, s := range p.scenes {
-		if s.ID == id {
-			sc = s
-			break
-		}
-	}
-	if sc.ID == "" {
+	sc, found := p.findScene(p.selectedSceneID)
+	if !found {
 		return
 	}
-
+	sc.Name = p.editingScenePropsName
+	sc.Width = w
+	sc.Height = h
+	sc.BackgroundHTML = p.editingScenePropsBG
 	for i := range p.scenes {
-		if p.scenes[i].ID == id {
-			p.scenes[i].Name = name
-			p.scenes[i].Width = w
-			p.scenes[i].Height = h
-			p.scenes[i].BackgroundHTML = bg
+		if p.scenes[i].ID == sc.ID {
+			p.scenes[i] = sc
 			break
 		}
 	}
-	// Show the fields as the scene now holds them, so that the reload after
-	// a rejected save puts the server's values back (mergeSceneEditingFields
-	// keeps only fields the user changed since).
+	// A rejected optimistic save restores server fields; later local edits survive.
 	p.syncSceneEditingFields()
-
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + id
-	body, _ := json.Marshal(apiv0.UpdateSceneRequest{
-		Name:           name,
-		Width:          w,
-		Height:         h,
-		BackgroundHTML: bg,
-		Version:        sc.Version,
-	})
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-				p.loadScenes(ctx)
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-				p.loadScenes(ctx)
-			})
-			return
-		}
-		defer resp.Body.Close()
-		var result updateSceneResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.Version > 0 {
-			ctx.Dispatch(func(ctx app.Context) {
-				for i := range p.scenes {
-					if p.scenes[i].ID == id {
-						p.scenes[i].Version = result.Version
-						break
-					}
-				}
-			})
-		}
-	})
+	p.updateScene(sc)
 }
-
 func (p *Project) startEditingScene(id, name string) {
 	p.editingSceneID = id
 	p.editingSceneName = name
 }
-
 func (p *Project) commitSceneEdit(ctx app.Context) {
-	ctx = p.compoCtx
 	if p.editingSceneID == "" {
 		return
 	}
-	id := p.editingSceneID
-	name := p.editingSceneName
+	id, name := p.editingSceneID, p.editingSceneName
 	p.editingSceneID = ""
 	p.editingSceneName = ""
-
-	var sc sceneItem
-	for _, s := range p.scenes {
-		if s.ID == id {
-			sc = s
-			break
-		}
-	}
-	if sc.ID == "" {
+	sc, found := p.findScene(id)
+	if !found {
 		return
 	}
-	for i, s := range p.scenes {
-		if s.ID == id {
-			p.scenes[i].Name = name
+	sc.Name = name
+	for i := range p.scenes {
+		if p.scenes[i].ID == sc.ID {
+			p.scenes[i] = sc
 			break
 		}
 	}
 	if p.selectedSceneID == id {
 		p.editingScenePropsName = name
 	}
-	url := p.apiServerURL + apiv0.PathPrefix + "/scenes/" + id
-	body, _ := json.Marshal(apiv0.UpdateSceneRequest{
-		Name:           name,
-		Width:          sc.Width,
-		Height:         sc.Height,
-		BackgroundHTML: sc.BackgroundHTML,
-		Version:        sc.Version,
-	})
-	sceneID := id
-	ctx.Async(func() {
-		req, _ := http.NewRequest(http.MethodPut, url, bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, toast.NetworkError(err))
-				p.loadScenes(ctx)
-			})
-			return
-		}
-		if resp.StatusCode >= 400 {
-			prob := toast.FromHTTPError(resp)
-			ctx.Dispatch(func(ctx app.Context) {
-				ctx.NewActionWithValue(toast.ActionAdd, prob)
-				p.loadScenes(ctx)
-			})
-			return
-		}
-		defer resp.Body.Close()
-		var result updateSceneResponse
-		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.Version > 0 {
-			ctx.Dispatch(func(ctx app.Context) {
-				for i := range p.scenes {
-					if p.scenes[i].ID == sceneID {
-						p.scenes[i].Version = result.Version
-						break
-					}
-				}
-			})
-		}
-	})
+	p.updateScene(sc)
 }

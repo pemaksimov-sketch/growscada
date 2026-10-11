@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/google/uuid"
+
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 
 	"github.com/kipitix/growscada/internal/server/interface/ui/uidto"
@@ -27,12 +29,12 @@ func (p *Project) renderPropertiesPanel() app.UI {
 	} else {
 		var found widgetItem
 		for _, w := range p.widgets {
-			if w.ID == p.selectedWidgetID {
+			if w.ID.String() == p.selectedWidgetID {
 				found = w
 				break
 			}
 		}
-		if found.ID == "" {
+		if found.ID == uuid.Nil {
 			content = app.Div().Style("font-size", "13px").Style("color", "var(--text-muted)").Text("Widget not found.")
 		} else {
 			content = p.renderWidgetProperties(found)
@@ -204,7 +206,7 @@ func (p *Project) renderSceneProperties() app.UI {
 }
 
 func (p *Project) renderWidgetProperties(w widgetItem) app.UI {
-	wid := w.ID
+	wid := w.ID.String()
 
 	// Defaults for reset buttons; InputPorts resolved in the same pass.
 	defaultName := "Widget"
@@ -212,7 +214,7 @@ func (p *Project) renderWidgetProperties(w widgetItem) app.UI {
 	var wtInputPorts []uidto.InputPortDTO
 	var capturedWT widgetTypeItem
 	for _, wt := range p.widgetTypes {
-		if wt.ID == w.TypeID {
+		if wt.ID.String() == w.TypeID.String() {
 			capturedWT = wt
 			defaultName = wt.Name
 			if wt.DefaultWidth > 0 {
@@ -330,6 +332,7 @@ func (p *Project) renderWidgetProperties(w widgetItem) app.UI {
 				app.Input().
 					Type("text").
 					Value(p.editingWidgetName).
+					ID("widget-name").
 					OnInput(func(ctx app.Context, e app.Event) {
 						p.editingWidgetName = ctx.JSSrc().Get("value").String()
 					}).
@@ -557,7 +560,7 @@ func (p *Project) renderWidgetProperties(w widgetItem) app.UI {
 	// Build a map from port name → bound tag ID for quick lookup.
 	boundTagID := make(map[string]string, len(w.PortBindings))
 	for _, b := range w.PortBindings {
-		boundTagID[b.PortName] = b.TagID
+		boundTagID[b.PortName] = b.TagID.String()
 	}
 
 	portBindingRows := make([]app.UI, 0, len(inputPorts))
@@ -575,7 +578,7 @@ func (p *Project) renderWidgetProperties(w widgetItem) app.UI {
 			if port.TypeHint != "" && t.Type != port.TypeHint {
 				continue
 			}
-			tagOptions = append(tagOptions, app.Option().Value(t.ID).Selected(t.ID == currentTagID).Text(t.Name+" ("+t.Type+")"))
+			tagOptions = append(tagOptions, app.Option().Value(t.ID.String()).Selected(t.ID.String() == currentTagID).Text(t.Name+" ("+t.Type+")"))
 		}
 
 		var descEl app.UI

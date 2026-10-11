@@ -132,6 +132,9 @@ async function api(resource, method = 'GET', body) {
     await until(async () => (await background.getAttribute('srcdoc')).includes('Updated QA background'));
     assert.equal(await sceneName.inputValue(), 'Unsaved scene name', 'SSE erased an unsaved Project edit');
     await sceneName.fill(current.name);
+    const beforeNameSave = await api(`/scenes/${scene.id}`);
+    await sceneName.press('Tab');
+    await until(async () => Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) > beforeNameSave.version);
     const backgroundEditor = page.locator('#scene-background');
     await backgroundEditor.fill('<div style="background:#16213e;width:900px;height:600px">Applied QA background</div>');
     await backgroundEditor.press('Tab');
@@ -184,6 +187,7 @@ async function api(resource, method = 'GET', body) {
     await page.mouse.up();
     await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).position.x === 160);
     assert.deepEqual(conflicts, [], 'Drag after reconciliation conflicted');
+    await require('./crud.cjs')(page, api, until);
     assert.deepEqual(errors, [], 'Browser runtime errors');
 	await page.getByText('Operation', { exact: true }).click();
 	await background.waitFor({ state: 'visible' });

@@ -1,19 +1,8 @@
 package operation
 
-import "github.com/kipitix/growscada/internal/server/interface/ui/livescene"
+import apiv0 "github.com/kipitix/growscada/contract/api/v0"
 
-type getScenesResponse struct {
-	Scenes []livescene.Scene `json:"scenes"`
-}
-
-type getWidgetTypesResponse struct {
-	WidgetTypes []livescene.WidgetType `json:"widget_types"`
-}
-
-type getWidgetsResponse struct {
-	Widgets []livescene.Widget `json:"widgets"`
-}
-
-type getTagsResponse struct {
-	Tags []livescene.Tag `json:"tags"`
-}
+type getScenesResponse = apiv0.GetScenesResponse
+type getWidgetTypesResponse = apiv0.GetWidgetTypesResponse
+type getWidgetsResponse = apiv0.GetWidgetsResponse
+type getTagsResponse = apiv0.GetTagsResponse

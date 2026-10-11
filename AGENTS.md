@@ -127,7 +127,7 @@ Services (`TagService`, `WidgetTypeService`, `SceneService`) accept repository i
   - **Project** — configure Scenes and place Widget instances on them.
   - **Operation** — runtime operator view.
   - **History** — event log viewer.
-- UI components communicate with the REST API directly using `http.Get/Post/…` inside `ctx.Async(…)` callbacks.
+- Project, Library and Operation use `apiclient.Server` on `contract/api/v0` types. `apiclient.Client` is the HTTP adapter; `apiclient.Memory` tests UI operations without a server. `uiutil.Tasks` owns asynchronous scheduling, storage and client-error notifications. List requests are coalesced with `uiutil.Load`; obsolete selection responses are discarded before reporting errors.
 
 ### Single Binary / Dual Compilation
 

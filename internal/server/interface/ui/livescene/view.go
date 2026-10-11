@@ -48,18 +48,18 @@ func (v *View) Render() app.UI {
 	cached := v.srcdocs
 	v.srcdocs = make(map[string]cachedSrcdoc, len(cached))
 	for _, w := range v.Widgets {
-		wt, ok := v.WidgetTypes[w.TypeID]
+		wt, ok := v.WidgetTypes[w.TypeID.String()]
 		if !ok {
 			continue
 		}
-		if _, done := v.srcdocs[wt.ID]; done {
+		if _, done := v.srcdocs[wt.ID.String()]; done {
 			continue
 		}
-		c, ok := cached[wt.ID]
+		c, ok := cached[wt.ID.String()]
 		if !ok || c.htmlTemplate != wt.HtmlTemplate || c.script != wt.Script {
 			c = cachedSrcdoc{wt.HtmlTemplate, wt.Script, uiutil.BuildLiveSrcdoc(wt.HtmlTemplate, wt.Script)}
 		}
-		v.srcdocs[wt.ID] = c
+		v.srcdocs[wt.ID.String()] = c
 	}
 
 	layers := make([]app.UI, 0, len(v.Widgets)+1)
@@ -113,8 +113,8 @@ func (v *View) Render() app.UI {
 func (v *View) renderWidget(w Widget, textMuted string) app.UI {
 	var srcdoc, inputsJSON string
 	quality := QualityBad
-	if wt, ok := v.WidgetTypes[w.TypeID]; ok {
-		srcdoc = v.srcdocs[wt.ID].srcdoc
+	if wt, ok := v.WidgetTypes[w.TypeID.String()]; ok {
+		srcdoc = v.srcdocs[wt.ID.String()].srcdoc
 		inputsJSON = uiutil.InputsJSON(WidgetInputs(w, wt, v.Tags))
 		quality = WidgetQuality(w, wt, v.Tags, v.Connected)
 	} else {

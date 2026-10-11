@@ -7,7 +7,7 @@ import "github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 func boundTag(w Widget, port string, tags map[string]Tag) (Tag, bool) {
 	for _, b := range w.PortBindings {
 		if b.PortName == port {
-			t, ok := tags[b.TagID]
+			t, ok := tags[b.TagID.String()]
 			return t, ok
 		}
 	}
@@ -21,8 +21,8 @@ func SceneTags(widgets []Widget, tags map[string]Tag) map[string]Tag {
 	bound := make(map[string]Tag)
 	for _, w := range widgets {
 		for _, b := range w.PortBindings {
-			if t, ok := tags[b.TagID]; ok {
-				bound[b.TagID] = t
+			if t, ok := tags[b.TagID.String()]; ok {
+				bound[b.TagID.String()] = t
 			}
 		}
 	}
@@ -57,7 +57,7 @@ func WidgetQuality(w Widget, wt WidgetType, tags map[string]Tag, connected bool)
 	}
 	for _, p := range wt.InputPorts {
 		if t, ok := boundTag(w, p.Name, tags); ok {
-			q = Worst(q, t.Quality)
+			q = Worst(q, Quality(t.Quality))
 		} else {
 			q = QualityBad
 		}

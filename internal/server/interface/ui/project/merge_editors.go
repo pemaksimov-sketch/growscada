@@ -17,7 +17,7 @@ func (p *Project) setScenes(ctx app.Context, scenes []sceneItem) {
 	// A version never goes back: a response that raced with our own mutation
 	// must not undo the version bump that mutation already recorded.
 	for i := range scenes {
-		if prev, ok := p.findScene(scenes[i].ID); ok && prev.Version > scenes[i].Version {
+		if prev, ok := p.findScene(scenes[i].ID.String()); ok && prev.Version > scenes[i].Version {
 			scenes[i].Version = prev.Version
 		}
 	}
@@ -28,7 +28,7 @@ func (p *Project) setScenes(ctx app.Context, scenes []sceneItem) {
 		p.clearWidgetSelection(ctx)
 	}
 	if p.selectedSceneID == "" && len(scenes) > 0 {
-		p.selectedSceneID = scenes[0].ID
+		p.selectedSceneID = scenes[0].ID.String()
 	}
 
 	if current, ok := p.findScene(p.selectedSceneID); ok && known && p.selectedSceneID == prevSceneID {
@@ -38,7 +38,7 @@ func (p *Project) setScenes(ctx app.Context, scenes []sceneItem) {
 	}
 
 	if p.selectedSceneID != prevSceneID {
-		ctx.LocalStorage().Set("project:sceneID", p.selectedSceneID)
+		p.tasks.Store("project:sceneID", p.selectedSceneID)
 		if p.selectedSceneID != "" {
 			p.loadWidgets(ctx)
 		}
@@ -47,7 +47,7 @@ func (p *Project) setScenes(ctx app.Context, scenes []sceneItem) {
 
 func (p *Project) findScene(id string) (sceneItem, bool) {
 	for _, sc := range p.scenes {
-		if sc.ID == id {
+		if sc.ID.String() == id {
 			return sc, true
 		}
 	}
@@ -92,7 +92,7 @@ func (p *Project) setWidgets(ctx app.Context, sceneID string, widgets []widgetIt
 
 func (p *Project) findWidget(id string) (widgetItem, bool) {
 	for _, w := range p.widgets {
-		if w.ID == id {
+		if w.ID.String() == id {
 			return w, true
 		}
 	}
@@ -177,10 +177,10 @@ func (p *Project) setTags(ctx app.Context, tags []tagItem) {
 		return
 	}
 	for _, t := range tags {
-		if t.ID == p.selectedTagID {
+		if t.ID.String() == p.selectedTagID {
 			return
 		}
 	}
 	p.selectedTagID = ""
-	ctx.LocalStorage().Set("project:tagID", "")
+	p.tasks.Store("project:tagID", "")
 }

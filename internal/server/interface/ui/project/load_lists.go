@@ -1,30 +1,30 @@
 package project
 
 import (
+	"context"
+	"errors"
+	"github.com/google/uuid"
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
-	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 )
 
 func (p *Project) loadWidgetTypes(ctx app.Context) {
-	uiutil.LoadJSON(p.compoCtx, &p.widgetTypesReloader, uiutil.JSONLoad[getWidgetTypesResponse]{
-		URL: p.apiServerURL + apiv0.PathPrefix + "/widget-types", Reload: p.loadWidgetTypes,
-		Apply: func(ctx app.Context, result getWidgetTypesResponse) { p.widgetTypes = result.WidgetTypes },
+	uiutil.Load(p.tasks, &p.widgetTypesReloader, uiutil.LoadRequest[[]apiv0.WidgetTypeResponse]{
+		Call: p.client.ListWidgetTypes, Reload: func() { p.loadWidgetTypes(p.compoCtx) },
+		Apply: func(items []apiv0.WidgetTypeResponse) { p.widgetTypes = items },
 	})
 }
-
 func (p *Project) loadScenes(ctx app.Context) {
-	uiutil.LoadJSON(p.compoCtx, &p.scenesReloader, uiutil.JSONLoad[getScenesResponse]{
-		URL: p.apiServerURL + apiv0.PathPrefix + "/scenes", Reload: p.loadScenes,
-		Apply: func(ctx app.Context, result getScenesResponse) { p.setScenes(ctx, result.Scenes) },
+	uiutil.Load(p.tasks, &p.scenesReloader, uiutil.LoadRequest[[]apiv0.SceneResponse]{
+		Call: p.client.ListScenes, Reload: func() { p.loadScenes(p.compoCtx) },
+		Apply: func(items []apiv0.SceneResponse) { p.setScenes(p.compoCtx, items) },
 	})
 }
 
-// loadScene refreshes only the owner of a changed widget, including the
-// version when deleting the last widget leaves an empty widget list.
+// loadScene refreshes only the owner, including an empty Scene's version.
 func (p *Project) loadScene(ctx app.Context, sceneID string) {
-	ctx = p.compoCtx
 	if p.sceneReloaders == nil {
 		p.sceneReloaders = make(map[string]*uiutil.Reloader)
 	}
@@ -33,45 +33,41 @@ func (p *Project) loadScene(ctx app.Context, sceneID string) {
 		r = &uiutil.Reloader{}
 		p.sceneReloaders[sceneID] = r
 	}
-	if !r.Start() {
-		return
-	}
-	ctx.Async(func() {
-		result, problem := uiutil.FetchJSON[sceneItem](p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID)
-		ctx.Dispatch(func(ctx app.Context) {
-			if problem != nil {
-				if problem.Status != 404 {
-					ctx.NewActionWithValue(toast.ActionAdd, *problem)
-				}
-			} else if old, exists := p.findScene(sceneID); exists && result.Version >= old.Version {
+	uiutil.Load(p.tasks, r, uiutil.LoadRequest[*apiv0.SceneResponse]{
+		Call: func(ctx context.Context) (*apiv0.SceneResponse, error) {
+			id, err := uuid.Parse(sceneID)
+			if err != nil {
+				return nil, err
+			}
+			sc, err := p.client.GetScene(ctx, id)
+			if errors.Is(err, apiclient.ErrNotFound) {
+				return nil, nil
+			}
+			return &sc, err
+		},
+		Reload: func() { p.loadScene(p.compoCtx, sceneID) },
+		Idle:   func() { delete(p.sceneReloaders, sceneID) },
+		Apply: func(result *apiv0.SceneResponse) {
+			if result == nil {
+				return
+			}
+			if old, exists := p.findScene(sceneID); exists && result.Version >= old.Version {
 				if sceneID == p.selectedSceneID {
-					p.mergeSceneEditingFields(old, result)
+					p.mergeSceneEditingFields(old, *result)
 				}
 				for i := range p.scenes {
-					if p.scenes[i].ID == sceneID {
-						p.scenes[i] = result
+					if p.scenes[i].ID.String() == sceneID {
+						p.scenes[i] = *result
 						break
 					}
 				}
 			}
-			if r.Done() {
-				p.loadScene(ctx, sceneID)
-			} else {
-				delete(p.sceneReloaders, sceneID)
-			}
-		})
+		},
 	})
 }
-
-// isInteracting reports whether a widget is being dragged, rotated or resized
-// on the canvas; replacing p.widgets then would make it jump under the cursor.
 func (p *Project) isInteracting() bool {
-	return p.draggingWidgetID != "" || p.draggingOriginID != "" ||
-		p.rotatingWidgetID != "" || p.resizingWidgetID != ""
+	return p.draggingWidgetID != "" || p.draggingOriginID != "" || p.rotatingWidgetID != "" || p.resizingWidgetID != ""
 }
-
-// loadWidgets (re)loads the widgets of the selected scene. During a canvas
-// interaction the reload is deferred until it ends (finalizeAllDrags).
 func (p *Project) loadWidgets(ctx app.Context) {
 	if p.selectedSceneID == "" {
 		p.widgets = nil
@@ -82,22 +78,27 @@ func (p *Project) loadWidgets(ctx app.Context) {
 		return
 	}
 	sceneID := p.selectedSceneID
-	uiutil.LoadJSON(p.compoCtx, &p.widgetsReloader, uiutil.JSONLoad[getWidgetsResponse]{
-		URL: p.apiServerURL + apiv0.PathPrefix + "/scenes/" + sceneID + "/widgets", Reload: p.loadWidgets,
-		Accept: func() bool { return p.selectedSceneID == sceneID },
-		Apply: func(ctx app.Context, result getWidgetsResponse) {
+	uiutil.Load(p.tasks, &p.widgetsReloader, uiutil.LoadRequest[[]apiv0.WidgetResponse]{
+		Call: func(ctx context.Context) ([]apiv0.WidgetResponse, error) {
+			id, err := uuid.Parse(sceneID)
+			if err != nil {
+				return nil, err
+			}
+			return p.client.ListWidgets(ctx, id)
+		},
+		Reload: func() { p.loadWidgets(p.compoCtx) }, Accept: func() bool { return p.selectedSceneID == sceneID },
+		Apply: func(items []apiv0.WidgetResponse) {
 			if p.isInteracting() {
 				p.widgetsReloadDeferred = true
 				return
 			}
-			p.setWidgets(ctx, sceneID, result.Widgets)
+			p.setWidgets(p.compoCtx, sceneID, items)
 		},
 	})
 }
-
 func (p *Project) loadTags(ctx app.Context) {
-	uiutil.LoadJSON(p.compoCtx, &p.tagsReloader, uiutil.JSONLoad[getTagsResponse]{
-		URL: p.apiServerURL + apiv0.PathPrefix + "/tags", Reload: p.loadTags,
-		Apply: func(ctx app.Context, result getTagsResponse) { p.setTags(ctx, mergeTagList(p.tags, result.Tags)) },
+	uiutil.Load(p.tasks, &p.tagsReloader, uiutil.LoadRequest[[]apiv0.TagResponse]{
+		Call: p.client.ListTags, Reload: func() { p.loadTags(p.compoCtx) },
+		Apply: func(items []apiv0.TagResponse) { p.setTags(p.compoCtx, mergeTagList(p.tags, items)) },
 	})
 }

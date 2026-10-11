@@ -84,7 +84,7 @@ func (l *Library) renderList() app.UI {
 
 	items := make([]app.UI, len(l.widgetTypes))
 	for i, it := range l.widgetTypes {
-		id := it.ID
+		id := it.ID.String()
 		name := it.Name
 		var item app.UI
 		if l.editingID == id {
@@ -93,6 +93,7 @@ func (l *Library) renderList() app.UI {
 				Style("border-radius", "4px").
 				Body(
 					app.Input().
+						ID("widget-type-name").
 						Type("text").
 						Value(l.editingName).
 						AutoFocus(true).
