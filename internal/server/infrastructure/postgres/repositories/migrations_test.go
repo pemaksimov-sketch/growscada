@@ -48,7 +48,7 @@ func TestMigrationSplit_CopiesLegacyStateIntoSeparateRuntimeDatabase(t *testing.
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { runtimeDB.Close(); _, _ = testDB.Exec("DROP DATABASE IF EXISTS " + runtimeName) })
-	if err := goose.UpToContext(ctx, engineeringDB, dir, 20261011010000); err != nil {
+	if err := goose.UpToContext(ctx, engineeringDB, dir, 20261011020000); err != nil {
 		t.Fatal(err)
 	}
 	const mainProjectID = "00000000-0000-4000-8000-000000000001"

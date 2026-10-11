@@ -342,6 +342,13 @@ func TestWidgetTypeFindAll_CreationOrderEvenAfterUpdates(t *testing.T) {
 func TestWidgetTypeDelete_UsedByWidget_RemovesDraftButKeepsWidget(t *testing.T) {
 	cleanScenes(t)
 	cleanWidgetTypes(t)
+	// This package's shared fixture intentionally stops before the Engineering
+	// schema migration. Match the Library Release schema behavior here: Widgets
+	// resolve their type through a pinned immutable snapshot, so the legacy FK
+	// to the mutable Draft row is absent.
+	if _, err := testDB.Exec(`ALTER TABLE widgets DROP CONSTRAINT IF EXISTS fk_widgets_type_id`); err != nil {
+		t.Fatalf("prepare Library Release schema: %v", err)
+	}
 	repo := repositories.NewWidgetTypeRepositoryPostgres(testDB)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(testDB)
 	ctx := context.Background()
