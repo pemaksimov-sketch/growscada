@@ -54,7 +54,7 @@ func TestMigrationSplit_CopiesLegacyStateIntoSeparateRuntimeDatabase(t *testing.
 	const mainProjectID = "00000000-0000-4000-8000-000000000001"
 	tagID := uuid.New()
 	legacyWidgetTypeID := uuid.New()
-	if _, err := engineeringDB.ExecContext(ctx, `INSERT INTO tags(id,project_id,name,type,value,quality,version) VALUES($1,$2,'legacy.counter','integer','9007199254740993','good',7)`, tagID, mainProjectID); err != nil {
+	if _, err := engineeringDB.ExecContext(ctx, `INSERT INTO engineering.tags(id,project_id,name,type,value,quality,version) VALUES($1,$2,'legacy.counter','integer','9007199254740993','good',7)`, tagID, mainProjectID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engineeringDB.ExecContext(ctx, `INSERT INTO engineering.widget_types(id,name,html_template,script,script_language,default_width,default_height,input_ports,version) VALUES($1,'legacy type','','','javascript',120,60,'[]'::jsonb,1)`, legacyWidgetTypeID); err != nil {

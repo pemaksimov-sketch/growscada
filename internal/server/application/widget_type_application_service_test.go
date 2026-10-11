@@ -651,6 +651,12 @@ func TestUpdateWidgetType_RemovedPort_SceneChangedMeanwhile_CleansBindingsKeepsC
 func TestDeleteWidgetType_UsedByProjectWidget_RemovesDraftOnly(t *testing.T) {
 	cleanScenes(t)
 	cleanWidgetTypes(t)
+	// These service fixtures use the pre-split public-schema database. Model
+	// the current Library Release layout, where project Widgets resolve their
+	// WidgetType from an immutable pin rather than this mutable Draft row.
+	if _, err := testDB.Exec(`ALTER TABLE widgets DROP CONSTRAINT IF EXISTS fk_widgets_type_id`); err != nil {
+		t.Fatalf("prepare Library Release schema: %v", err)
+	}
 	wtSvc := newWidgetTypeService()
 	sceneSvc := newSceneService()
 	ctx := context.Background()

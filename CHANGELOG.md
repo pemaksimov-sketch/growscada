@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Library Release (task 33): WidgetTypes now belong to organization Libraries, with the seeded public GrowSCADA Library and immutable numbered snapshots. Projects can pin one release per Library; REST, Library/Project screens and the ordered Bruno suite expose and verify these operations. API schema is 0.5.
+- Library Release (task 33): WidgetTypes now belong to organization Libraries, with the seeded public GrowSCADA Library and immutable numbered snapshots. Projects can pin one release per Library; REST, Library/Project screens and the ordered Bruno suite expose and verify these operations. Before changing a pin, Project lists affected Widgets and bound ports. `growctl widget-type apply` reads strict manifest v0.3 documents with an explicit Library UUID. API schema is 0.5.
 
 - Tag definitions and live values now have separate domain models and storage. Engineering owns `engineering.tag_definitions`; Runtime owns `runtime.tags` with per-project value, Quality and sequence. Startup copies legacy values without losing integer precision, and repeat migration preserves live state. `PATCH /tags/{id}/value` no longer checks a definition version; `PUT /tags/{id}/definition` uses optimistic concurrency. Tags and Widgets carry Project/Runtime origin. API schema is 0.4. Project removal also clears Runtime values.
 

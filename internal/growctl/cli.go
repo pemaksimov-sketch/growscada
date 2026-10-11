@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/apiclient"
 )
 
@@ -90,11 +91,83 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(
 		newApplyCommand(newClient),
+		newWidgetTypeCommand(newClient),
 		newDiffCommand(newClient),
 		newDeleteCommand(newClient),
 		newGetCommand(newClient),
 	)
 	return root
+}
+
+func newWidgetTypeCommand(newClient func() *Client) *cobra.Command {
+	group := &cobra.Command{Use: "widget-type", Short: "Manage WidgetTypes in a Library Draft", Args: cobra.ArbitraryArgs, RunE: runGroup}
+	var files []string
+	apply := &cobra.Command{
+		Use: "apply -f <file|directory|->", Short: "Create or update Library WidgetTypes from manifests", Args: noArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := requireFiles(files); err != nil {
+				return err
+			}
+			manifests, err := ReadWidgetTypeManifests(files, cmd.InOrStdin())
+			if err != nil {
+				return err
+			}
+			return applyWidgetTypeManifests(cmd.Context(), newClient(), manifests, cmd.OutOrStdout())
+		},
+	}
+	addFileFlag(apply, &files)
+	group.AddCommand(apply)
+	return group
+}
+
+func applyWidgetTypeManifests(ctx context.Context, client *Client, manifests []WidgetTypeManifest, out io.Writer) error {
+	for _, manifest := range manifests {
+		current, err := client.ListLibraryWidgetTypes(ctx, manifest.LibraryID)
+		if err != nil {
+			return fmt.Errorf("library %s: %w", manifest.LibraryID, err)
+		}
+		ports := make([]apiv0.InputPort, len(manifest.InputPorts))
+		for i, port := range manifest.InputPorts {
+			ports[i] = apiv0.InputPort{Name: port.Name, Description: port.Description, TypeHint: port.TypeHint}
+		}
+		var existing *apiv0.WidgetTypeResponse
+		for i := range current {
+			if current[i].Name == manifest.Name {
+				existing = &current[i]
+				break
+			}
+		}
+		if existing == nil {
+			_, err = client.CreateLibraryWidgetType(ctx, manifest.LibraryID, apiv0.CreateWidgetTypeRequest{Name: manifest.Name, HtmlTemplate: manifest.HtmlTemplate, Script: manifest.Script, ScriptLanguage: manifest.ScriptLanguage, DefaultWidth: manifest.DefaultWidth, DefaultHeight: manifest.DefaultHeight, InputPorts: ports})
+			if err != nil {
+				return fmt.Errorf("widgettype/%s: %w", manifest.Name, err)
+			}
+			fmt.Fprintf(out, "created widgettype/%s in library %s\n", manifest.Name, manifest.LibraryID)
+			continue
+		}
+		if existing.HtmlTemplate == manifest.HtmlTemplate && existing.Script == manifest.Script && existing.ScriptLanguage == manifest.ScriptLanguage && existing.DefaultWidth == manifest.DefaultWidth && existing.DefaultHeight == manifest.DefaultHeight && sameManifestPorts(existing.InputPorts, ports) {
+			fmt.Fprintf(out, "unchanged widgettype/%s in library %s\n", manifest.Name, manifest.LibraryID)
+			continue
+		}
+		_, err = client.UpdateLibraryWidgetType(ctx, manifest.LibraryID, existing.ID, apiv0.UpdateWidgetTypeRequest{Name: manifest.Name, HtmlTemplate: manifest.HtmlTemplate, Script: manifest.Script, ScriptLanguage: manifest.ScriptLanguage, DefaultWidth: manifest.DefaultWidth, DefaultHeight: manifest.DefaultHeight, InputPorts: ports, Version: existing.Version})
+		if err != nil {
+			return fmt.Errorf("widgettype/%s: %w", manifest.Name, err)
+		}
+		fmt.Fprintf(out, "configured widgettype/%s in library %s\n", manifest.Name, manifest.LibraryID)
+	}
+	return nil
+}
+
+func sameManifestPorts(a, b []apiv0.InputPort) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // runGroup is the RunE of a command group: without arguments it prints help,
