@@ -51,6 +51,10 @@ async function api(resource, method = 'GET', body) {
       input_ports: [{ name: 'n', description: 'Counter', type_hint: 'integer' }],
     });
     const type = await api(`/widget-types/${createdType.id}`);
+    const libraryRelease = await api('/libraries/00000000-0000-4000-8000-000000000003/releases', 'POST');
+    await api('/projects/00000000-0000-4000-8000-000000000001/libraries', 'POST', {
+      library_id: '00000000-0000-4000-8000-000000000003', release_id: libraryRelease.id,
+    });
     const widget = await api(`/scenes/${scene.id}/widgets`, 'POST', {
       name: 'QA counter', position: { x: 100, y: 100, z: 0 }, size: { width: 350, height: 80 },
       origin: { x: 0, y: 0 }, rotation: { degrees: 0 }, type_id: type.id,
@@ -180,12 +184,16 @@ async function api(resource, method = 'GET', body) {
     assert.equal((await api(`/widget-types/${type.id}`)).html_template, type.html_template);
     await page.screenshot({ path: path.join(output, 'library.png') });
 
-    // Remove a port through the actual Library editor. The policy must
-    // reconcile the saved binding before a subsequent Project drag.
+    // Draft edits must not mutate the immutable Library Release pinned by the
+    // Project or its live Operation widgets.
     await page.locator('#script-editor').fill("function render(inputs){document.querySelector('#exact').textContent=inputs.n?BigInt(inputs.n.raw).toString():'no input';}");
     await page.getByRole('button', { name: '✕', exact: true }).click();
     await page.getByRole('button', { name: 'Apply', exact: true }).first().click();
-    await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).port_bindings.length === 0);
+    await sleep(300);
+    assert.equal((await api(`/scenes/${scene.id}/widgets/${widget.id}`)).port_bindings.length, 1,
+      'editing the library draft changed a Project widget binding');
+    assert.equal((await api(`/projects/00000000-0000-4000-8000-000000000001/widget-types`)).widget_types[0].input_ports.length, 1,
+      'editing the library draft changed the pinned Project snapshot');
     assert.ok((await api(`/widget-types/${type.id}`)).version > changedType.version);
     await page.getByText('Project', { exact: true }).click();
     const reconciledBox = await page.locator(`#w-preview-${widget.id}`).boundingBox();
@@ -226,7 +234,7 @@ async function api(resource, method = 'GET', body) {
     assert.deepEqual(errors, [], 'Browser runtime errors after reconnect');
     server.kill('SIGTERM');
     assert.equal((await serverExit).code, 0);
-    console.log('PASS: background, scoped SSE, draft preservation, exact Integer, reconciliation and restart');
+    console.log('PASS: background, scoped SSE, draft preservation, exact Integer, immutable library release and restart');
   } catch (error) {
     fs.writeFileSync(path.join(output, 'responses.json'), JSON.stringify(responses, null, 2));
     if (page) {

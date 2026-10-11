@@ -1,7 +1,7 @@
 meta {
   name: seeded_library_release
   type: http
-  seq: 69
+  seq: 74
 }
 
 get {
@@ -14,8 +14,8 @@ tests {
   test("seeded_library_release: first immutable release exists", function () {
     expect(res.getStatus()).to.equal(200);
     const releases = res.getBody().releases;
-    expect(releases).to.have.length(1);
-    expect(releases[0].number).to.equal(1);
-    bru.setVar("seededLibraryReleaseID", releases[0].id);
+    const seeded = releases.find(release => release.number === 1);
+    expect(seeded).to.exist;
+    bru.setVar("seededLibraryReleaseID", seeded.id);
   });
 }

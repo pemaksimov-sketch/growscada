@@ -105,9 +105,8 @@ func main() {
 		err := device.Run(runCtx)
 		close(deviceDone) // before an emergency exit, whose Device hook waits for it
 		if err != nil {
-			// A missing tag or a pattern that does not fit its tag's type.
 			slog.Error("Device error", "error", err)
-			emergencyExit(gracedownManager, gracedown.ExitConfig)
+			emergencyExit(gracedownManager, deviceExitCode(err))
 		}
 	}()
 
@@ -121,6 +120,24 @@ func main() {
 	slog.Info("Device simulator stopped gracefully")
 
 	os.Exit(gracedown.ExitSuccess)
+}
+
+func deviceExitCode(err error) int {
+	if errors.Is(err, devicelink.ErrTagNotFound) || errors.Is(err, devicesim.ErrPatternIncompatible) {
+		return gracedown.ExitConfig
+	}
+	var statusErr *apiclient.StatusError
+	if errors.As(err, &statusErr) {
+		if statusErr.Status == http.StatusUnauthorized || statusErr.Status == http.StatusForbidden {
+			return gracedown.ExitNoPerm
+		}
+		if statusErr.Status >= http.StatusBadRequest && statusErr.Status < http.StatusInternalServerError {
+			return gracedown.ExitProtocol
+		}
+	}
+	// Invalid URLs, TLS verification failures and other non-transient transport
+	// errors indicate that the Gateway cannot speak the configured protocol.
+	return gracedown.ExitProtocol
 }
 
 func readConfig(path string) (devicesim.Config, error) {

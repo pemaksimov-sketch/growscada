@@ -1,7 +1,7 @@
 meta {
   name: main_default_library_pin
   type: http
-  seq: 79
+  seq: 84
 }
 
 get {
@@ -11,10 +11,10 @@ get {
 }
 
 tests {
-  test("main_default_library_pin: migration seed is preserved", function () {
+  test("main_default_library_pin: test release remains pinned", function () {
     expect(res.getStatus()).to.equal(200);
     const pin = res.getBody().pins.find(item => item.library_id === bru.getVar("defaultLibraryID"));
     expect(pin).to.exist;
-    expect(pin.release.id).to.equal(bru.getVar("seededLibraryReleaseID"));
+    expect(pin.release.id).to.equal(bru.getVar("defaultTestRelease"));
   });
 }

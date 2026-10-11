@@ -1,0 +1,28 @@
+meta {
+  name: pin_default_library
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects/00000000-0000-4000-8000-000000000001/libraries
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "library_id": "00000000-0000-4000-8000-000000000003",
+    "release_id": "{{defaultTestRelease}}"
+  }
+}
+
+tests {
+  test("pin_default_library: project release pinned", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}

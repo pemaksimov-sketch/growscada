@@ -1,0 +1,18 @@
+meta {
+  name: publish_default_library
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseURL}}/api/v0/libraries/00000000-0000-4000-8000-000000000003/releases
+  body: none
+  auth: none
+}
+
+tests {
+  test("publish_default_library: type snapshot created", function () {
+    expect(res.getStatus()).to.equal(201);
+    bru.setVar("defaultTestRelease", res.getBody().id);
+  });
+}

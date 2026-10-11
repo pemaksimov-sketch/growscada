@@ -1,0 +1,18 @@
+meta {
+  name: publish_shared_type
+  type: http
+  seq: 54
+}
+
+post {
+  url: {{baseURL}}/api/v0/libraries/00000000-0000-4000-8000-000000000003/releases
+  body: none
+  auth: none
+}
+
+tests {
+  test("publish_shared_type: immutable release created", function () {
+    expect(res.getStatus()).to.equal(201);
+    bru.setVar("projectTypeRelease", res.getBody().id);
+  });
+}
