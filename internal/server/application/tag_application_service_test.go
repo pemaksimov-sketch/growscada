@@ -63,7 +63,7 @@ func TestMain(m *testing.M) {
 		pgContainer.Terminate(ctx)
 		panic("failed to set goose dialect: " + err.Error())
 	}
-	if err := goose.Up(db, migrationsDir); err != nil {
+	if err := goose.UpTo(db, migrationsDir, 20261011010000); err != nil {
 		db.Close()
 		pgContainer.Terminate(ctx)
 		panic("failed to run migrations: " + err.Error())
