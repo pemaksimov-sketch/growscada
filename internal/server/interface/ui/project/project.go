@@ -34,6 +34,7 @@ type Project struct {
 	tasks     uiutil.Tasks
 
 	activeSubTab projectSubTab
+	showGuides   bool
 
 	widgetTypes []widgetTypeItem
 	scenes      []sceneItem
@@ -44,6 +45,7 @@ type Project struct {
 	widgetTypesReloader uiutil.Reloader
 	scenesReloader      uiutil.Reloader
 	sceneReloaders      map[string]*uiutil.Reloader
+	sceneWrites         map[string]*sceneWrites
 	widgetsReloader     uiutil.Reloader
 	tagsReloader        uiutil.Reloader
 	// widgetsReloadDeferred is set when a widget reload arrives mid-drag; it
@@ -143,7 +145,7 @@ type Project struct {
 }
 
 func NewProject(apiServerURL string) *Project {
-	return &Project{client: apiclient.New(apiServerURL, http.DefaultClient), activeSubTab: subTabScenes}
+	return &Project{client: apiclient.New(apiServerURL, http.DefaultClient), activeSubTab: subTabScenes, showGuides: true}
 }
 
 func (p *Project) OnMount(ctx app.Context) {
@@ -155,6 +157,7 @@ func (p *Project) OnMount(ctx app.Context) {
 	p.propertiesWidth = 260
 	ctx.LocalStorage().Get("project:widgetTypeWidth", &p.widgetTypeWidth)
 	ctx.LocalStorage().Get("project:propertiesWidth", &p.propertiesWidth)
+	ctx.LocalStorage().Get("project:showGuides", &p.showGuides)
 
 	var savedTab string
 	ctx.LocalStorage().Get("project:subTab", &savedTab)
@@ -263,6 +266,15 @@ func (p *Project) renderSubTabs() app.UI {
 		Body(
 			p.subTab("Scenes", subTabScenes),
 			p.subTab("Tags", subTabTags),
+			app.Div().Style("flex", "1"),
+			app.If(p.activeSubTab == subTabScenes, func() app.UI {
+				return app.Label().Style("display", "flex").Style("align-items", "center").Style("gap", "4px").Style("font-size", "12px").Body(
+					app.Input().Type("checkbox").Checked(p.showGuides).OnChange(func(ctx app.Context, e app.Event) {
+						p.showGuides = ctx.JSSrc().Get("checked").Bool()
+						p.tasks.Store("project:showGuides", p.showGuides)
+					}), app.Text("Guides"),
+				)
+			}),
 		)
 }
 

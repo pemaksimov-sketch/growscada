@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 
 // Run against the server and browser owned by smoke.cjs. All creations and
 // deletions use actual UI controls; REST only observes persisted results.
-module.exports = async function checkCRUD(page, api, until) {
+module.exports = async function checkCRUD(page, api, until, output) {
   const clickMode = name => page.getByText(name, { exact: true }).click();
   page.on('dialog', dialog => dialog.accept());
   await clickMode('Library');
@@ -46,6 +46,31 @@ module.exports = async function checkCRUD(page, api, until) {
     return saved.background_html.includes('CRUD scene background') &&
       Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) === saved.version;
   });
+  // Deliberately overlap two real edits while the first HTTP write is slow.
+  // They share the Scene version and must both persist without a self-conflict.
+  const beforeRapid = await api(`/scenes/${scene.id}`);
+  const sceneURL = `http://localhost:9090/api/v0/scenes/${scene.id}`;
+  let delayed = false;
+  const delayFirstWrite = async route => {
+    if (route.request().method() === 'PUT' && !delayed) {
+      delayed = true;
+      await new Promise(resolve => setTimeout(resolve, 700));
+    }
+    await route.continue();
+  };
+  await page.route(sceneURL, delayFirstWrite);
+  await page.locator('#scene-name').fill('CRUD browser scene renamed');
+  await page.locator('#scene-name').press('Tab');
+  await page.locator('#scene-background').fill('<div>CRUD scene background rapid</div>');
+  await page.locator('#scene-background').press('Tab');
+  await until(async () => {
+    const saved = await api(`/scenes/${scene.id}`);
+    return saved.name === 'CRUD browser scene renamed' && saved.background_html.includes('background rapid') &&
+      saved.version === beforeRapid.version + 2 &&
+      Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) === saved.version;
+  });
+  assert.ok(delayed, 'slow-save regression did not exercise a PUT');
+  await page.unroute(sceneURL, delayFirstWrite);
   await page.locator(`[data-widget-type-id="${type.id}"]`).dragTo(page.locator('#scene-canvas'), {
     targetPosition: { x: 200, y: 180 },
   });
@@ -65,6 +90,22 @@ module.exports = async function checkCRUD(page, api, until) {
   await page.locator('#widget-name').press('Tab');
   await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).name === 'CRUD browser widget');
   let savedWidget = await api(`/scenes/${scene.id}/widgets/${widget.id}`);
+  await until(async () => Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) === savedWidget.scene_version);
+
+  // Alignment feedback is visible during the gesture and does not snap.
+  const movingBox = await page.locator(`#w-preview-${widget.id}`).boundingBox();
+  assert.ok(movingBox);
+  await page.mouse.move(movingBox.x + 20, movingBox.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(movingBox.x + 20 + 2 - savedWidget.position.x, movingBox.y + 20, { steps: 12 });
+  const guide = page.locator('.scene-guide[data-axis="x"][data-position="0.00"]');
+  await guide.waitFor();
+  assert.equal(await guide.evaluate(el => getComputedStyle(el).pointerEvents), 'none');
+  await page.screenshot({ path: require('node:path').join(output, 'guides.png') });
+  await page.mouse.up();
+  await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).position.x === 2);
+  await until(async () => await page.locator('.scene-guide').count() === 0);
+  savedWidget = await api(`/scenes/${scene.id}/widgets/${widget.id}`);
   await until(async () => Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) === savedWidget.scene_version);
 
   // Background and grid must leave resize and rotation handles usable too.
@@ -102,7 +143,7 @@ module.exports = async function checkCRUD(page, api, until) {
   await clickMode('Project');
   await page.getByRole('button', { name: 'Delete Widget', exact: true }).click();
   await until(async () => (await api(`/scenes/${scene.id}/widgets`)).widgets.length === 0);
-  await page.getByLabel('Delete scene CRUD browser scene', { exact: true }).click();
+  await page.getByLabel('Delete scene CRUD browser scene renamed', { exact: true }).click();
   await until(async () => !(await api('/scenes')).scenes.some(s => s.id === scene.id));
   await clickMode('Library');
   await page.getByText('CRUD browser type', { exact: true }).click();

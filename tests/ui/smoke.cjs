@@ -193,7 +193,7 @@ async function api(resource, method = 'GET', body) {
     await page.mouse.up();
     await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).position.x === 160);
     assert.deepEqual(conflicts, [], 'Drag after reconciliation conflicted');
-    await require('./crud.cjs')(page, api, until);
+    await require('./crud.cjs')(page, api, until, output);
     assert.deepEqual(errors, [], 'Browser runtime errors');
     await page.getByText('Operation', { exact: true }).click();
     // Project's background remains visible during the mode transition.

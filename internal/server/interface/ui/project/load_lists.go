@@ -25,6 +25,10 @@ func (p *Project) loadScenes(ctx app.Context) {
 
 // loadScene refreshes only the owner, including an empty Scene's version.
 func (p *Project) loadScene(ctx app.Context, sceneID string) {
+	if q := p.writesFor(sceneID); q != nil {
+		q.refreshScene = true
+		return
+	}
 	if p.sceneReloaders == nil {
 		p.sceneReloaders = make(map[string]*uiutil.Reloader)
 	}
@@ -48,6 +52,10 @@ func (p *Project) loadScene(ctx app.Context, sceneID string) {
 		Reload: func() { p.loadScene(p.compoCtx, sceneID) },
 		Idle:   func() { delete(p.sceneReloaders, sceneID) },
 		Apply: func(result *apiv0.SceneResponse) {
+			if q := p.writesFor(sceneID); q != nil {
+				q.refreshScene = true
+				return
+			}
 			if result == nil {
 				return
 			}
@@ -77,6 +85,10 @@ func (p *Project) loadWidgets(ctx app.Context) {
 		p.widgetsReloadDeferred = true
 		return
 	}
+	if q := p.writesFor(p.selectedSceneID); q != nil {
+		q.refreshWidgets = true
+		return
+	}
 	sceneID := p.selectedSceneID
 	uiutil.Load(p.tasks, &p.widgetsReloader, uiutil.LoadRequest[[]apiv0.WidgetResponse]{
 		Call: func(ctx context.Context) ([]apiv0.WidgetResponse, error) {
@@ -88,6 +100,10 @@ func (p *Project) loadWidgets(ctx app.Context) {
 		},
 		Reload: func() { p.loadWidgets(p.compoCtx) }, Accept: func() bool { return p.selectedSceneID == sceneID },
 		Apply: func(items []apiv0.WidgetResponse) {
+			if q := p.writesFor(sceneID); q != nil {
+				q.refreshWidgets = true
+				return
+			}
 			if p.isInteracting() {
 				p.widgetsReloadDeferred = true
 				return

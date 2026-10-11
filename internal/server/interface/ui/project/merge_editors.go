@@ -17,6 +17,12 @@ func (p *Project) setScenes(ctx app.Context, scenes []sceneItem) {
 	// A version never goes back: a response that raced with our own mutation
 	// must not undo the version bump that mutation already recorded.
 	for i := range scenes {
+		if q := p.writesFor(scenes[i].ID.String()); q != nil {
+			q.refreshScene = true
+			if prev, ok := p.findScene(scenes[i].ID.String()); ok {
+				scenes[i] = prev
+			}
+		}
 		if prev, ok := p.findScene(scenes[i].ID.String()); ok && prev.Version > scenes[i].Version {
 			scenes[i].Version = prev.Version
 		}

@@ -68,13 +68,9 @@ func (p *Project) syncSceneEditingFields() {
 	p.editingScenePropsBG = ""
 }
 func (p *Project) updateScene(sc sceneItem) {
-	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.UpdateSceneResponse, error) {
-		return p.client.UpdateScene(ctx, sc.ID, apiv0.UpdateSceneRequest{Name: sc.Name, Width: sc.Width, Height: sc.Height, BackgroundHTML: sc.BackgroundHTML, Version: sc.Version})
-	}, func(result apiv0.UpdateSceneResponse) {
-		if result.Version > 0 {
-			p.applyNewSceneVersion(sc.ID.String(), result.Version)
-		}
-	}, func() { p.loadScenes(p.compoCtx) })
+	sceneRequest(p, sc.ID.String(), func(ctx context.Context, version int) (apiv0.UpdateSceneResponse, error) {
+		return p.client.UpdateScene(ctx, sc.ID, apiv0.UpdateSceneRequest{Name: sc.Name, Width: sc.Width, Height: sc.Height, BackgroundHTML: sc.BackgroundHTML, Version: version})
+	}, func(result apiv0.UpdateSceneResponse) int { return result.Version }, nil)
 }
 func (p *Project) saveSceneProperties(ctx app.Context) {
 	if p.selectedSceneID == "" {
@@ -90,6 +86,9 @@ func (p *Project) saveSceneProperties(ctx app.Context) {
 	}
 	sc, found := p.findScene(p.selectedSceneID)
 	if !found {
+		return
+	}
+	if sc.Name == p.editingScenePropsName && sc.Width == w && sc.Height == h && sc.BackgroundHTML == p.editingScenePropsBG {
 		return
 	}
 	sc.Name = p.editingScenePropsName
@@ -119,6 +118,9 @@ func (p *Project) commitSceneEdit(ctx app.Context) {
 	p.editingSceneName = ""
 	sc, found := p.findScene(id)
 	if !found {
+		return
+	}
+	if sc.Name == name {
 		return
 	}
 	sc.Name = name

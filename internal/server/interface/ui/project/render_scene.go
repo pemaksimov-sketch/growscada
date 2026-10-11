@@ -188,6 +188,7 @@ func (p *Project) renderSceneCanvas() app.UI {
 	for _, w := range p.widgets {
 		widgetEls = append(widgetEls, p.renderWidget(w, textMuted))
 	}
+	widgetEls = append(widgetEls, p.renderGuides(sceneWidth, sceneHeight)...)
 
 	// Determine overall canvas cursor from active drag mode.
 	canvasCursor := "default"

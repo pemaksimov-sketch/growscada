@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -9,7 +10,6 @@ import (
 
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
-	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
 )
 
 // ── Widget data loading ───────────────────────────────────────────────────────
@@ -67,8 +67,7 @@ func (p *Project) createWidget(ctx app.Context, typeID string, x, y float64) {
 		}
 	}
 	sceneID := p.selectedSceneID
-	version := p.currentSceneVersion()
-	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.CreateWidgetResponse, error) {
+	sceneRequest(p, sceneID, func(ctx context.Context, version int) (apiv0.CreateWidgetResponse, error) {
 		sceneUUID, err := uuid.Parse(sceneID)
 		if err != nil {
 			return apiv0.CreateWidgetResponse{}, err
@@ -78,19 +77,18 @@ func (p *Project) createWidget(ctx app.Context, typeID string, x, y float64) {
 			return apiv0.CreateWidgetResponse{}, err
 		}
 		return p.client.CreateWidget(ctx, sceneUUID, apiv0.CreateWidgetRequest{Name: name, Position: apiv0.PositionRequest{X: x, Y: y}, Size: apiv0.SizeRequest{Width: width, Height: height}, Origin: apiv0.OriginRequest{X: 0.5, Y: 0.5}, TypeID: typeUUID, SceneVersion: version, Labels: []string{}, PortBindings: []apiv0.PortBinding{}})
-	}, func(result apiv0.CreateWidgetResponse) {
-		p.applyNewSceneVersion(sceneID, result.SceneVersion)
+	}, func(result apiv0.CreateWidgetResponse) int { return result.SceneVersion }, func(result apiv0.CreateWidgetResponse) {
 		if p.selectedSceneID == sceneID {
 			p.selectedWidgetID = result.ID.String()
 			p.tasks.Store("project:widgetID", p.selectedWidgetID)
 			p.syncEditingFields(widgetItem{Name: name, Position: positionDTO{X: x, Y: y}, Size: sizeDTO{Width: width, Height: height}, Origin: originDTO{X: 0.5, Y: 0.5}})
 		}
 		p.loadWidgets(p.compoCtx)
-	}, func() { p.loadScene(p.compoCtx, sceneID); p.loadWidgets(p.compoCtx) })
+	})
 }
 func (p *Project) deleteWidget(ctx app.Context, widgetID string) {
 	sceneID := p.selectedSceneID
-	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.WidgetResponse, error) {
+	sceneRequest(p, sceneID, func(ctx context.Context, _ int) (apiv0.WidgetResponse, error) {
 		sc, err := uuid.Parse(sceneID)
 		if err != nil {
 			return apiv0.WidgetResponse{}, err
@@ -100,8 +98,7 @@ func (p *Project) deleteWidget(ctx app.Context, widgetID string) {
 			return apiv0.WidgetResponse{}, err
 		}
 		return p.client.DeleteWidget(ctx, sc, id)
-	}, func(result apiv0.WidgetResponse) {
-		p.applyNewSceneVersion(sceneID, result.SceneVersion)
+	}, func(result apiv0.WidgetResponse) int { return result.SceneVersion }, func(result apiv0.WidgetResponse) {
 		if p.selectedWidgetID == widgetID {
 			p.clearWidgetSelection(p.compoCtx)
 		}
@@ -112,7 +109,7 @@ func (p *Project) deleteWidget(ctx app.Context, widgetID string) {
 			}
 		}
 		p.widgets = filtered
-	}, nil)
+	})
 }
 func (p *Project) saveWidgetName(ctx app.Context) {
 	if strings.TrimSpace(p.editingWidgetName) == "" {
@@ -122,6 +119,9 @@ func (p *Project) saveWidgetName(ctx app.Context) {
 	if idx < 0 {
 		return
 	}
+	if p.widgets[idx].Name == p.editingWidgetName {
+		return
+	}
 	p.widgets[idx].Name = p.editingWidgetName
 	p.putWidget(ctx, p.widgets[idx])
 }
@@ -129,6 +129,13 @@ func (p *Project) saveWidgetName(ctx app.Context) {
 func (p *Project) saveWidgetGeometry(ctx app.Context) {
 	idx := p.selectedWidgetIdx()
 	if idx < 0 {
+		return
+	}
+	// Display precision can be lower than stored geometry precision. Leaving
+	// a formatted field unchanged must not round and write the original value.
+	local, displayed := p.editFields(), editFieldsOf(p.widgets[idx])
+	local.name = displayed.name
+	if local == displayed {
 		return
 	}
 	var nf numberFields
@@ -146,6 +153,10 @@ func (p *Project) saveWidgetGeometry(ctx app.Context) {
 		return
 	}
 
+	geometry := widgetGeometry{positionDTO{X: posX, Y: posY, Z: posZ}, sizeDTO{Width: width, Height: height}, originDTO{X: originX, Y: originY}, rotationDTO{Degrees: rotDeg}}
+	if geometryOf(p.widgets[idx]) == geometry {
+		return
+	}
 	p.widgets[idx].Position = positionDTO{X: posX, Y: posY, Z: posZ}
 	p.widgets[idx].Size = sizeDTO{Width: width, Height: height}
 	p.widgets[idx].Origin = originDTO{X: originX, Y: originY}
@@ -173,6 +184,9 @@ func (p *Project) bindPort(ctx app.Context, portName, tagID string) {
 	}
 	for i, b := range p.widgets[idx].PortBindings {
 		if b.PortName == portName {
+			if b.TagID == tagUUID {
+				return
+			}
 			p.widgets[idx].PortBindings[i].TagID = tagUUID
 			found = true
 			break
@@ -201,6 +215,9 @@ func (p *Project) unbindPort(ctx app.Context, portName string) {
 			filtered = append(filtered, b)
 		}
 	}
+	if len(filtered) == len(p.widgets[idx].PortBindings) {
+		return
+	}
 	p.widgets[idx].PortBindings = filtered
 	p.putWidget(ctx, p.widgets[idx])
 }
@@ -208,22 +225,22 @@ func (p *Project) unbindPort(ctx app.Context, portName string) {
 func (p *Project) putWidget(ctx app.Context, w widgetItem) {
 	sceneID := p.selectedSceneID
 	input := apiv0.UpdateWidgetRequest{Name: w.Name, Position: apiv0.PositionRequest(w.Position), Size: apiv0.SizeRequest(w.Size), Origin: apiv0.OriginRequest(w.Origin), Rotation: apiv0.RotationRequest(w.Rotation), TypeID: w.TypeID, PortBindings: w.PortBindings, Labels: w.Labels, SceneVersion: p.currentSceneVersion()}
+	input.PortBindings = slices.Clone(input.PortBindings)
+	input.Labels = slices.Clone(input.Labels)
 	if input.PortBindings == nil {
 		input.PortBindings = []apiv0.PortBinding{}
 	}
 	if input.Labels == nil {
 		input.Labels = []string{}
 	}
-	uiutil.Request(p.tasks, func(ctx context.Context) (apiv0.UpdateWidgetResponse, error) {
+	sceneRequest(p, sceneID, func(ctx context.Context, version int) (apiv0.UpdateWidgetResponse, error) {
+		input.SceneVersion = version
 		id, err := uuid.Parse(sceneID)
 		if err != nil {
 			return apiv0.UpdateWidgetResponse{}, err
 		}
 		return p.client.UpdateWidget(ctx, id, w.ID, input)
-	}, func(result apiv0.UpdateWidgetResponse) { p.applyNewSceneVersion(sceneID, result.SceneVersion) }, func() {
-		p.loadScene(p.compoCtx, sceneID)
-		p.loadWidgets(p.compoCtx)
-	})
+	}, func(result apiv0.UpdateWidgetResponse) int { return result.SceneVersion }, nil)
 }
 
 // ── Drag finalisation ─────────────────────────────────────────────────────────

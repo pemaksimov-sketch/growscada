@@ -4,11 +4,15 @@
 
 ### Changed
 
+- Scene alignment guides (task 41): while moving or resizing, Project shows nearby edges and centers of the canvas and other widgets, including rotated bounds. The Guides toggle is remembered locally. Guides are visual, leave coordinates unchanged and do not intercept pointer input.
+
 - API integration (task 30): `make test_api` builds the server/WASM container and runs 36 ordered Bruno requests against an isolated migrated PostgreSQL database. GitHub and GitVerse workflow definitions invoke the same script; JUnit results and container logs are retained. `DATABASE_DSN` configures the server database, retaining the previous local default.
 
 - Typed UI client (task 23): Project, Library and Operation share `apiclient.Server`, API contract types and a single error-to-toast mapper. An in-memory adapter tests CRUD, optimistic conflicts, draft preservation and selection without a server. HTTP route/header tests and browser CRUD cover the real adapter. With Go 1.26.1, the first refactor build changed WASM from 19,551,181 to 19,514,974 bytes (−36,207 bytes); no API schema change.
 
 ### Fixed
+
+- Scene autosave serializes edits and widget writes using the latest successful aggregate version. Unchanged fields do not write, including geometry displayed with lower precision. Background reloads wait for local writes; an external conflict cancels dependent writes and reloads the server state.
 
 - Reliable widget reconciliation (task 21): WidgetType saves no longer synchronously change Scenes. Each reliable policy has its own durable queue and worker; a failed or slow reconciliation retries after restart without blocking Operation SSE or other subscribers. Scene reconciliation remains idempotent and retries CAS races.
 
