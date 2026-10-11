@@ -140,7 +140,8 @@ async function api(resource, method = 'GET', body) {
     await sceneName.fill(current.name);
     const beforeNameSave = await api(`/scenes/${scene.id}`);
     await sceneName.press('Tab');
-    await until(async () => Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) > beforeNameSave.version);
+    await until(async () => Number(await page.locator('#scene-canvas').getAttribute('data-scene-version')) === beforeNameSave.version);
+    assert.equal((await api(`/scenes/${scene.id}`)).version, beforeNameSave.version, 'unchanged scene name wrote a new version');
     const backgroundEditor = page.locator('#scene-background');
     await backgroundEditor.fill('<div style="background:#16213e;width:900px;height:600px">Applied QA background</div>');
     await backgroundEditor.press('Tab');
