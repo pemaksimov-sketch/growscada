@@ -6,6 +6,7 @@ import apiv0 "github.com/kipitix/growscada/contract/api/v0"
 // It is the single routing table of the modes that show server data
 // (Library, Project, Operation); each reloads the lists it shows.
 type ReloadTargets struct {
+	Projects                           bool
 	WidgetTypes, Scenes, Widgets, Tags bool
 	SceneID                            string
 }
@@ -24,13 +25,15 @@ func ReloadTargetsForScene(ev ServerEvent, selectedSceneID string) ReloadTargets
 
 // AllTargets is every list: what a resync reloads, since the events
 // published while disconnected are lost.
-var AllTargets = ReloadTargets{WidgetTypes: true, Scenes: true, Widgets: true, Tags: true}
+var AllTargets = ReloadTargets{Projects: true, WidgetTypes: true, Scenes: true, Widgets: true, Tags: true}
 
 // ReloadTargetsFor routes a ServerEvent by its Type.
 func ReloadTargetsFor(eventType string) ReloadTargets {
 	switch eventType {
 	case EventResync:
 		return AllTargets
+	case apiv0.EventProjectCreated, apiv0.EventProjectUpdated, apiv0.EventProjectDeleted:
+		return ReloadTargets{Projects: true}
 	case apiv0.EventWidgetTypeCreated, apiv0.EventWidgetTypeUpdated, apiv0.EventWidgetTypeDeleted:
 		return ReloadTargets{WidgetTypes: true}
 	case apiv0.EventSceneCreated, apiv0.EventSceneUpdated, apiv0.EventSceneDeleted:

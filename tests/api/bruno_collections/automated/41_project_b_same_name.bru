@@ -1,0 +1,35 @@
+meta {
+  name: project_b_same_name
+  type: http
+  seq: 41
+}
+
+post {
+  url: {{baseURL}}/api/v0/projects/{{projectB}}/tags
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "ci.project.counter",
+    "type": "integer",
+    "value": "0",
+    "quality": "good"
+  }
+}
+
+tests {
+  test("project_b_same_name: status and schema header", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+  });
+  test("project_b_same_name: response", function () {
+    const body = res.getBody();
+    expect(body.id).not.to.equal(bru.getVar("projectTagA")); bru.setVar("projectTagB",body.id);
+  });
+}

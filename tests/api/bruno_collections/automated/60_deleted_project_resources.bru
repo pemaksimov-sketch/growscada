@@ -1,0 +1,22 @@
+meta {
+  name: deleted_project_resources
+  type: http
+  seq: 60
+}
+
+get {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}/tags
+  body: none
+  auth: none
+}
+
+tests {
+  test("deleted_project_resources: status and schema header", function () {
+    expect(res.getStatus()).to.equal(404);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+  });
+  test("deleted_project_resources: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(404); expect(body.title).to.be.a("string").and.not.empty;
+  });
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"time"
 
@@ -25,7 +26,8 @@ var DefaultQuality = devicelink.QualityGood
 // Config is the simulator's YAML config: one virtual Device.
 type Config struct {
 	// Server is the GrowSCADA REST API URL.
-	Server string `yaml:"server"`
+	Server  string `yaml:"server"`
+	Project string `yaml:"project,omitempty"`
 	// Control is the listen address of the control API.
 	Control string `yaml:"control"`
 	// Autostart starts generating right away; otherwise on POST /control/device/start.
@@ -96,6 +98,12 @@ func (c *Config) applyDefaults() {
 // not known yet: the pattern/type compatibility is checked when the tags are
 // resolved on the server.
 func (c Config) Validate() error {
+	if c.Project != "" {
+		parsed, err := uuid.Parse(c.Project)
+		if err != nil || parsed == uuid.Nil {
+			return errors.New("project must be a nonzero project UUID")
+		}
+	}
 	if c.DefaultInterval.D <= 0 {
 		return errors.New("defaultInterval must be positive")
 	}

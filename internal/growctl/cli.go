@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/kipitix/growscada/internal/apiclient"
@@ -48,6 +49,7 @@ func usageError(err error) error {
 // NewRootCommand builds the growctl command tree. Output goes to the command's
 // out writer (cmd.SetOut), manifests given as "-" are read from its input.
 func NewRootCommand() *cobra.Command {
+	projectID := os.Getenv("GROWCTL_PROJECT")
 	server := os.Getenv(ServerEnv)
 	if server == "" {
 		server = DefaultServer
@@ -67,9 +69,23 @@ func NewRootCommand() *cobra.Command {
 	})
 	root.PersistentFlags().StringVar(&server, "server", server,
 		"GrowSCADA REST API URL (env "+ServerEnv+")")
+	root.PersistentFlags().StringVar(&projectID, "project", projectID, "Project UUID (env GROWCTL_PROJECT; legacy default Main)")
+	root.PersistentPreRunE = func(*cobra.Command, []string) error {
+		if projectID != "" {
+			parsed, err := uuid.Parse(projectID)
+			if err != nil || parsed == uuid.Nil {
+				return usageError(errors.New("--project must be a nonzero project UUID"))
+			}
+		}
+		return nil
+	}
 
 	newClient := func() *Client {
-		return NewClient(server, &http.Client{Timeout: 30 * time.Second})
+		client := NewClient(server, &http.Client{Timeout: 30 * time.Second})
+		if projectID != "" {
+			client.Client = client.Client.ForProject(uuid.MustParse(projectID))
+		}
+		return client
 	}
 
 	root.AddCommand(
@@ -258,6 +274,9 @@ func deleteManifests(cmd *cobra.Command, client *Client, files []string) error {
 	if err != nil {
 		return err
 	}
+	if err := selectManifestProject(client, manifests); err != nil {
+		return err
+	}
 	server, err := fetchServerTags(ctx, client, manifests, false, NameFilter{})
 	if err != nil {
 		return err
@@ -323,11 +342,34 @@ func planApply(ctx context.Context, client *Client, files []string, stdin io.Rea
 	if err != nil {
 		return nil, err
 	}
+	if err := selectManifestProject(client, manifests); err != nil {
+		return nil, err
+	}
 	server, err := fetchServerTags(ctx, client, manifests, prune, scope)
 	if err != nil {
 		return nil, err
 	}
 	return PlanApply(manifests, server, prune)
+}
+
+func selectManifestProject(client *Client, manifests []TagManifest) error {
+	selected := client.ProjectID()
+	for _, manifest := range manifests {
+		if manifest.ProjectID == "" {
+			continue
+		}
+		projectID := uuid.MustParse(manifest.ProjectID) // validated by the parser
+		if selected != uuid.Nil && selected != projectID {
+			return errors.New("manifest project differs from --project/context or another document")
+		}
+		selected = projectID
+	}
+	if selected == uuid.Nil {
+		return nil
+	} // Older manifests keep the Main alias.
+	// An explicitly selected Main still uses scoped URLs like every project.
+	client.Client = client.Client.ForProject(selected)
+	return nil
 }
 
 // fetchServerTags returns the server tags the plan depends on: the manifests'

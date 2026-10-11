@@ -2,6 +2,8 @@ package project
 
 import (
 	"fmt"
+	"github.com/google/uuid"
+	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/apiclient"
 	"math"
 	"net/http"
@@ -32,6 +34,7 @@ type Project struct {
 	ThemeMode string // exported so go-app detects theme changes and re-renders
 	client    apiclient.Server
 	tasks     uiutil.Tasks
+	projectID uuid.UUID
 
 	activeSubTab projectSubTab
 	showGuides   bool
@@ -144,13 +147,33 @@ type Project struct {
 	panelResizeStartWidth int
 }
 
-func NewProject(apiServerURL string) *Project {
-	return &Project{client: apiclient.New(apiServerURL, http.DefaultClient), activeSubTab: subTabScenes, showGuides: true}
+func NewProject(apiServerURL string, projectIDs ...uuid.UUID) *Project {
+	client := apiclient.New(apiServerURL, http.DefaultClient)
+	projectID := uuid.Nil
+	if len(projectIDs) > 0 {
+		projectID = projectIDs[0]
+		client = client.ForProject(projectID)
+	}
+	return &Project{client: client, projectID: projectID, activeSubTab: subTabScenes, showGuides: true}
+}
+
+func (p *Project) selectionKey(key string) string {
+	if p.projectID == uuid.Nil || p.projectID.String() == apiv0.MainProjectID {
+		return key
+	}
+	return key + ":" + p.projectID.String()
 }
 
 func (p *Project) OnMount(ctx app.Context) {
 	p.compoCtx = ctx
 	p.tasks = uiutil.BrowserTasks(ctx)
+	remember := p.tasks.Remember
+	p.tasks.Remember = func(key string, value any) {
+		if key == "project:sceneID" || key == "project:widgetID" || key == "project:tagID" {
+			key = p.selectionKey(key)
+		}
+		remember(key, value)
+	}
 	ctx.ObserveState("theme", &p.ThemeMode)
 	p.simInputs = make(map[string]map[string]string)
 	p.widgetTypeWidth = 180
@@ -164,9 +187,9 @@ func (p *Project) OnMount(ctx app.Context) {
 	if savedTab != "" {
 		p.activeSubTab = projectSubTab(savedTab)
 	}
-	ctx.LocalStorage().Get("project:sceneID", &p.selectedSceneID)
-	ctx.LocalStorage().Get("project:widgetID", &p.selectedWidgetID)
-	ctx.LocalStorage().Get("project:tagID", &p.selectedTagID)
+	ctx.LocalStorage().Get(p.selectionKey("project:sceneID"), &p.selectedSceneID)
+	ctx.LocalStorage().Get(p.selectionKey("project:widgetID"), &p.selectedWidgetID)
+	ctx.LocalStorage().Get(p.selectionKey("project:tagID"), &p.selectedTagID)
 	p.loadWidgetTypes(ctx)
 	p.loadScenes(ctx)
 	if p.selectedSceneID != "" {

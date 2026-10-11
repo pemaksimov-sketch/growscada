@@ -6,6 +6,7 @@ import apiv0 "github.com/kipitix/growscada/contract/api/v0"
 type category string
 
 const (
+	categoryProject    category = "Project"
 	categoryTag        category = "Tag"
 	categoryWidget     category = "Widget"
 	categoryWidgetType category = "WidgetType"
@@ -17,6 +18,7 @@ const (
 
 // allCategories lists every filter toggle, in display order.
 var allCategories = []category{
+	categoryProject,
 	categoryTag,
 	categoryWidget,
 	categoryWidgetType,
@@ -30,6 +32,7 @@ var allCategories = []category{
 // per-write tag value updates, which would otherwise flood the log.
 func defaultFilters() map[category]bool {
 	return map[category]bool{
+		categoryProject:    true,
 		categoryTag:        true,
 		categoryWidget:     true,
 		categoryWidgetType: true,
@@ -48,10 +51,13 @@ type eventTypeInfo struct {
 }
 
 var eventTypeInfoByType = map[string]eventTypeInfo{
-	apiv0.EventSystemReady: {categoryOther, "System ready"},
-	apiv0.EventTagCreated:  {categoryTag, "Tag %s created"},
-	apiv0.EventTagUpdated:  {categoryValue, "Tag %s value updated"},
-	apiv0.EventTagDeleted:  {categoryTag, "Tag %s deleted"},
+	apiv0.EventProjectCreated: {categoryProject, "Project %s created"},
+	apiv0.EventProjectUpdated: {categoryProject, "Project %s updated"},
+	apiv0.EventProjectDeleted: {categoryProject, "Project %s deleted"},
+	apiv0.EventSystemReady:    {categoryOther, "System ready"},
+	apiv0.EventTagCreated:     {categoryTag, "Tag %s created"},
+	apiv0.EventTagUpdated:     {categoryValue, "Tag %s value updated"},
+	apiv0.EventTagDeleted:     {categoryTag, "Tag %s deleted"},
 
 	apiv0.EventWidgetCreated: {categoryWidget, "Widget %s created"},
 	apiv0.EventWidgetUpdated: {categoryWidget, "Widget %s updated"},

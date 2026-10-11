@@ -207,6 +207,7 @@ type outboxRow struct {
 	seq       int64
 	eventType string
 	payload   []byte
+	projectID sql.NullString
 }
 
 func (row outboxRow) decode() (event.Event, error) {
@@ -214,7 +215,7 @@ func (row outboxRow) decode() (event.Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Decode(eventType, row.payload)
+	return decodeScoped(eventType, row.payload, row.projectID.String)
 }
 
 // readBatch reads the oldest committed rows up to the first one held back:
@@ -223,7 +224,7 @@ func (row outboxRow) decode() (event.Event, error) {
 // tx_id, so every row after a held back one is held back too.
 func (d *Dispatcher) readBatch(ctx context.Context) (batch []outboxRow, heldBack bool, err error) {
 	rows, err := d.db.QueryContext(ctx,
-		`SELECT seq, type, payload, tx_id < pg_snapshot_xmin(pg_current_snapshot())
+		`SELECT seq, type, payload, project_id, tx_id < pg_snapshot_xmin(pg_current_snapshot())
 		 FROM outbox ORDER BY tx_id, seq LIMIT $1`, batchSize)
 	if err != nil {
 		return nil, false, fmt.Errorf("cannot read outbox: %w", err)
@@ -233,7 +234,7 @@ func (d *Dispatcher) readBatch(ctx context.Context) (batch []outboxRow, heldBack
 	for rows.Next() {
 		var row outboxRow
 		var ready bool
-		if err := rows.Scan(&row.seq, &row.eventType, &row.payload, &ready); err != nil {
+		if err := rows.Scan(&row.seq, &row.eventType, &row.payload, &row.projectID, &ready); err != nil {
 			return nil, false, fmt.Errorf("cannot scan outbox row: %w", err)
 		}
 		if !ready {

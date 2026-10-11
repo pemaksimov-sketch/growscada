@@ -87,6 +87,7 @@ Each subdomain owns its aggregate, value objects, and repository **interface**:
 | Package    | Aggregate / Concept |
 |------------|---------------------|
 | `tag/`     | `Tag` — atomic SCADA data point with type, value, quality (`Good/Bad/Uncertain`); its events (`TagCreatedEvent`, …) |
+| `project/` | `Project` — organization-owned metadata aggregate; `ForProject` binds Tag/Scene repositories to a typed Project ID before use |
 | `scene/`   | `Scene` — named canvas (mnemonic screen); immutable aggregate whose methods (`AddWidget`, `UpdateWidget`, `RemoveWidget`, `Update`, `ReconcileWith`, `Delete`) return a new Scene; Scene and Widget events |
 | `scene/`   | `Widget` — entity of the Scene aggregate: instance of a WidgetType placed on a Scene, with position/size/rotation/transform matrix |
 | `library/` | `WidgetType` — reusable template: HTML template + JavaScript script, InputPorts; immutable (`Update`, `Delete`); its events |
@@ -116,6 +117,7 @@ Services (`TagService`, `WidgetTypeService`, `SceneService`) accept repository i
 - CORS middleware applied globally.
 - Errors follow RFC 7807 Problem Details (`problems.go`).
 - Each resource has its own handler file (`tags.go`, `widgets.go`, etc.). JSON shapes are `contract/api/v0`; the conversions to/from `appdto` are in `dto_mapping.go`.
+- Project catalog CRUD lives under `/projects`; Tags, Scenes, Widgets and SSE are scoped under `/projects/{project}`. Legacy resource routes address Main. The organization-wide Library remains shared until Library Release pinning (task 33). The UI project picker reloads the page to discard the previous project's mounted components and asynchronous requests.
 - Request bodies are decoded strictly with `decodeRequest` (unknown field → 400); clients read responses tolerantly.
 
 **EventBus** (`internal/server/interface/eventbus/`): in-process bus feeding the SSE stream (`GET /api/v0/events`): domain events handed over by the outbox dispatcher, plus delivery's own events (`client_connected`/`client_disconnected`, `system_ready`). `event_bus_mqtt.go` is a stub.

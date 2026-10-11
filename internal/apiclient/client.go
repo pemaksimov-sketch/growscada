@@ -57,12 +57,35 @@ type Tag = apiv0.TagResponse
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	projectID  uuid.UUID
 }
 
 // New creates a client for the server at baseURL (e.g. http://localhost:9090).
 func New(baseURL string, httpClient *http.Client) *Client {
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient}
 }
+
+// ForProject returns an independent client sharing only the HTTP transport.
+// Shared organization library paths remain global; tags/scenes/events are scoped.
+func (c *Client) ForProject(projectID uuid.UUID) *Client {
+	scoped := *c
+	scoped.projectID = projectID
+	return &scoped
+}
+func (c *Client) ProjectID() uuid.UUID { return c.projectID }
+func (c *Client) scopedPath(path string) string {
+	if c.projectID == uuid.Nil {
+		return path
+	}
+	resource := strings.TrimPrefix(path, apiv0.PathPrefix)
+	for _, name := range []string{"/tags", "/scenes", "/events"} {
+		if resource == name || strings.HasPrefix(resource, name+"/") || strings.HasPrefix(resource, name+"?") {
+			return apiv0.PathPrefix + "/projects/" + c.projectID.String() + resource
+		}
+	}
+	return path
+}
+func (c *Client) EventsURL() string { return c.baseURL + c.scopedPath(apiv0.PathPrefix+"/events") }
 
 // ListTags returns every tag on the server.
 func (c *Client) ListTags(ctx context.Context) ([]Tag, error) {
@@ -146,7 +169,7 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, wantS
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+c.scopedPath(path), reader)
 	if err != nil {
 		return err
 	}

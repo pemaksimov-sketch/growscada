@@ -10,9 +10,12 @@ import (
 	"time"
 
 	"github.com/alexflint/go-arg"
+	"github.com/google/uuid"
 	"github.com/kipitix/gracedown"
 	"github.com/kipitix/growscada/internal/server/application"
 	"github.com/kipitix/growscada/internal/server/domain/event"
+	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -105,10 +108,25 @@ func main() {
 
 	// INTERFACE COMPONENTS
 	// API server
-	tagRepository := repositories.NewTagRepositoryPostgres(sqlDB, notifyDispatcher)
+	projectRepository := repositories.NewProjectRepositoryPostgres(sqlDB, project.DefaultOrganizationID(), notifyDispatcher)
+	projectService := application.NewProjectService(projectRepository, project.DefaultOrganizationID())
+	mainRepositories := repositories.ForProject(sqlDB, project.MainID(), notifyDispatcher)
+	tagRepository := mainRepositories.Tags()
 	widgetTypeRepository := repositories.NewWidgetTypeRepositoryPostgres(sqlDB, notifyDispatcher)
-	sceneRepository := repositories.NewSceneRepositoryPostgres(sqlDB, notifyDispatcher)
-	reconciliation := application.NewWidgetReconciliationPolicy(widgetTypeRepository, sceneRepository)
+	sceneRepository := mainRepositories.Scenes()
+	bindingScopes := func(ctx context.Context) ([]application.WidgetBindingScope, error) {
+		projects, err := projectRepository.FindAll(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]application.WidgetBindingScope, len(projects))
+		for i, p := range projects {
+			scope := repositories.ForProject(sqlDB, p.ID(), notifyDispatcher)
+			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: scope.Tags()}
+		}
+		return result, nil
+	}
+	reconciliation := application.NewProjectWidgetReconciliationPolicy(widgetTypeRepository, bindingScopes)
 	dispatcher.RegisterPolicy("reconcile-widget-bindings", event.EventTypeWidgetTypeUpdated, reconciliation.Handle)
 	go func() {
 		dispatcher.Run(dispatcherCtx)
@@ -116,10 +134,15 @@ func main() {
 	}()
 	// Create services
 	tagService := application.NewTagService(tagRepository)
-	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository)
+	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository, application.WithWidgetTypeScopes(bindingScopes))
 	sceneService := application.NewSceneService(sceneRepository, widgetTypeRepository, tagRepository)
 	// Create router
-	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients)
+	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients,
+		restapi.WithProjects(projectService, func(rawID uuid.UUID) restapi.ProjectServices {
+			scope := repositories.ForProject(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher)
+			tags, scenes := scope.Tags(), scope.Scenes()
+			return restapi.ProjectServices{Tags: application.NewTagService(tags), Scenes: application.NewSceneService(scenes, widgetTypeRepository, tags)}
+		}))
 	// Register the event hub shutdown handler. The outbox is drained first,
 	// while SSE clients are still connected, so what is left in it reaches
 	// them; a change committed after the drain (the API server stops

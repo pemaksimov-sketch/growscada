@@ -15,6 +15,7 @@ import (
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/domain/version"
@@ -67,6 +68,8 @@ func Encode(e event.Event) ([]byte, error) {
 		p.SceneID = &sceneID
 	case scene.SceneEvent:
 		p.ID = ev.SceneID().UUID()
+	case project.Event:
+		p.ID = ev.ProjectID().UUID()
 	default:
 		return nil, fmt.Errorf("cannot encode event %s: not a domain event", e.Type())
 	}
@@ -75,11 +78,16 @@ func Encode(e event.Event) ([]byte, error) {
 
 // Decode rebuilds the event of the given type from its stored form.
 func Decode(eventType event.EventType, data []byte) (event.Event, error) {
+	return decodeScoped(eventType, data, "")
+}
+
+func decodeScoped(eventType event.EventType, data []byte, projectID string) (event.Event, error) {
 	var p payload
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("cannot decode %s payload: %w", eventType, err)
 	}
 	ts := event.WithTimestamp(event.NewEventTimestamp(event.EventTimestampWithTime(p.Timestamp)))
+	opts := []event.EventOption{ts, event.WithProjectID(projectID)}
 
 	tagID := id.NewID(id.IDWithUUID[tag.Tag](p.ID))
 	widgetTypeID := id.NewID(id.IDWithUUID[library.WidgetType](p.ID))
@@ -87,28 +95,30 @@ func Decode(eventType event.EventType, data []byte) (event.Event, error) {
 	widgetID := id.NewID(id.IDWithUUID[scene.Widget](p.ID))
 
 	switch eventType {
+	case event.EventTypeProjectCreated, event.EventTypeProjectUpdated, event.EventTypeProjectDeleted:
+		return project.NewEvent(eventType, id.NewID(id.IDWithUUID[project.Project](p.ID)), opts...), nil
 	case event.EventTypeTagCreated:
-		return tag.NewTagCreatedEvent(tagID, ts), nil
+		return tag.NewTagCreatedEvent(tagID, opts...), nil
 	case event.EventTypeTagUpdated:
 		t, err := decodeTagState(tagID, p.Tag)
 		if err != nil {
 			return nil, err
 		}
-		return tag.NewTagUpdatedEvent(t, ts), nil
+		return tag.NewTagUpdatedEvent(t, opts...), nil
 	case event.EventTypeTagDeleted:
-		return tag.NewTagDeletedEvent(tagID, ts), nil
+		return tag.NewTagDeletedEvent(tagID, opts...), nil
 	case event.EventTypeWidgetTypeCreated:
-		return library.NewWidgetTypeCreatedEvent(widgetTypeID, ts), nil
+		return library.NewWidgetTypeCreatedEvent(widgetTypeID, opts...), nil
 	case event.EventTypeWidgetTypeUpdated:
-		return library.NewWidgetTypeUpdatedEvent(widgetTypeID, ts), nil
+		return library.NewWidgetTypeUpdatedEvent(widgetTypeID, opts...), nil
 	case event.EventTypeWidgetTypeDeleted:
-		return library.NewWidgetTypeDeletedEvent(widgetTypeID, ts), nil
+		return library.NewWidgetTypeDeletedEvent(widgetTypeID, opts...), nil
 	case event.EventTypeSceneCreated:
-		return scene.NewSceneCreatedEvent(sceneID, ts), nil
+		return scene.NewSceneCreatedEvent(sceneID, opts...), nil
 	case event.EventTypeSceneUpdated:
-		return scene.NewSceneUpdatedEvent(sceneID, ts), nil
+		return scene.NewSceneUpdatedEvent(sceneID, opts...), nil
 	case event.EventTypeSceneDeleted:
-		return scene.NewSceneDeletedEvent(sceneID, ts), nil
+		return scene.NewSceneDeletedEvent(sceneID, opts...), nil
 	}
 
 	// Widget events: the Scene that holds the widget is stored beside it.
@@ -118,11 +128,11 @@ func Decode(eventType event.EventType, data []byte) (event.Event, error) {
 	holder := id.NewID(id.IDWithUUID[scene.Scene](*p.SceneID))
 	switch eventType {
 	case event.EventTypeWidgetCreated:
-		return scene.NewWidgetCreatedEvent(widgetID, holder, ts), nil
+		return scene.NewWidgetCreatedEvent(widgetID, holder, opts...), nil
 	case event.EventTypeWidgetUpdated:
-		return scene.NewWidgetUpdatedEvent(widgetID, holder, ts), nil
+		return scene.NewWidgetUpdatedEvent(widgetID, holder, opts...), nil
 	case event.EventTypeWidgetDeleted:
-		return scene.NewWidgetDeletedEvent(widgetID, holder, ts), nil
+		return scene.NewWidgetDeletedEvent(widgetID, holder, opts...), nil
 	}
 	return nil, fmt.Errorf("cannot decode event of type %s: not a domain event", eventType)
 }

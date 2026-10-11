@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/google/uuid"
 	"net/http/httptest"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/kipitix/growscada/internal/server/application"
 	"github.com/kipitix/growscada/internal/server/domain/event"
+	"github.com/kipitix/growscada/internal/server/domain/id"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -118,12 +121,29 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 	tagSvc := application.NewTagService(tagRepo)
 	wtRepo := repositories.NewWidgetTypeRepositoryPostgres(db, onCommit)
 	sceneRepo := repositories.NewSceneRepositoryPostgres(db, onCommit)
-	policy := application.NewWidgetReconciliationPolicy(wtRepo, sceneRepo)
+	projectRepo := repositories.NewProjectRepositoryPostgres(db, project.DefaultOrganizationID(), onCommit)
+	projectSvc := application.NewProjectService(projectRepo, project.DefaultOrganizationID())
+	bindingScopes := func(ctx context.Context) ([]application.WidgetBindingScope, error) {
+		projects, err := projectRepo.FindAll(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]application.WidgetBindingScope, len(projects))
+		for i, p := range projects {
+			scope := repositories.ForProject(db, p.ID(), onCommit)
+			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: scope.Tags()}
+		}
+		return result, nil
+	}
+	policy := application.NewProjectWidgetReconciliationPolicy(wtRepo, bindingScopes)
 	dispatcher.RegisterPolicy("reconcile-widget-bindings", event.EventTypeWidgetTypeUpdated, policy.Handle)
 	go func() { dispatcher.Run(ctx); close(done) }()
-	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, tagRepo)
+	wtSvc := application.NewWidgetTypeService(wtRepo, sceneRepo, tagRepo, application.WithWidgetTypeScopes(bindingScopes))
 	sceneSvc := application.NewSceneService(sceneRepo, wtRepo, tagRepo)
-	router := restapi.NewRouter(tagSvc, wtSvc, sceneSvc, bus, 100)
+	router := restapi.NewRouter(tagSvc, wtSvc, sceneSvc, bus, 100, restapi.WithProjects(projectSvc, func(rawID uuid.UUID) restapi.ProjectServices {
+		scope := repositories.ForProject(db, id.NewID(id.IDWithUUID[project.Project](rawID)), onCommit)
+		return restapi.ProjectServices{Tags: application.NewTagService(scope.Tags()), Scenes: application.NewSceneService(scope.Scenes(), wtRepo, scope.Tags())}
+	}))
 
 	srv := httptest.NewServer(router.ServeMux())
 	t.Cleanup(srv.Close)

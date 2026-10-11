@@ -1,0 +1,45 @@
+meta {
+  name: project_narrowing_rejected
+  type: http
+  seq: 56
+}
+
+put {
+  url: {{baseURL}}/api/v0/widget-types/{{projectType}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI projects type",
+    "html_template": "",
+    "script": "",
+    "script_language": "javascript",
+    "default_width": 100,
+    "default_height": 50,
+    "input_ports": [
+      {
+        "name": "n",
+        "description": "Counter",
+        "type_hint": "string"
+      }
+    ],
+    "version": 1
+  }
+}
+
+tests {
+  test("project_narrowing_rejected: status and schema header", function () {
+    expect(res.getStatus()).to.equal(400);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+  });
+  test("project_narrowing_rejected: response", function () {
+    const body = res.getBody();
+    expect(body.status).to.equal(400); expect(body.title).to.be.a("string").and.not.empty;
+  });
+}

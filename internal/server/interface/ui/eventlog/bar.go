@@ -12,8 +12,10 @@ import (
 
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 
-	apiv0 "github.com/kipitix/growscada/contract/api/v0"
+	"github.com/google/uuid"
+	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/kipitix/growscada/internal/server/interface/ui/toast"
+	"net/http"
 )
 
 // maxEntries is the cap on how many events are kept in the client-side
@@ -73,6 +75,7 @@ type Bar struct {
 	app.Compo
 
 	apiServerURL string
+	projectID    uuid.UUID
 
 	now       string
 	panelOpen bool
@@ -87,8 +90,12 @@ type Bar struct {
 	connectionDegraded bool
 }
 
-func NewBar(apiServerURL string) *Bar {
-	return &Bar{apiServerURL: apiServerURL}
+func NewBar(apiServerURL string, projectIDs ...uuid.UUID) *Bar {
+	b := &Bar{apiServerURL: apiServerURL}
+	if len(projectIDs) > 0 {
+		b.projectID = projectIDs[0]
+	}
+	return b
 }
 
 func (b *Bar) OnMount(ctx app.Context) {
@@ -166,7 +173,8 @@ func (b *Bar) connect(ctx app.Context) {
 }
 
 func (b *Bar) openEventSource() {
-	es := app.Window().Get("EventSource").New(b.apiServerURL + apiv0.PathPrefix + "/events")
+	client := apiclient.New(b.apiServerURL, http.DefaultClient).ForProject(b.projectID)
+	es := app.Window().Get("EventSource").New(client.EventsURL())
 	es.Set("onmessage", b.onMessage)
 	es.Set("onerror", b.onError)
 	es.Set("onopen", b.onOpen)

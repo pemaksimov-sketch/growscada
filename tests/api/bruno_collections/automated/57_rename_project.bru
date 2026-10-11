@@ -1,0 +1,33 @@
+meta {
+  name: rename_project
+  type: http
+  seq: 57
+}
+
+put {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "CI renamed project",
+    "version": 1
+  }
+}
+
+tests {
+  test("rename_project: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+  });
+  test("rename_project: response", function () {
+    const body = res.getBody();
+    expect(body.name).to.equal("CI renamed project"); expect(body.version).to.equal(2);
+  });
+}

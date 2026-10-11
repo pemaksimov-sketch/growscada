@@ -1,0 +1,22 @@
+meta {
+  name: delete_project_a
+  type: http
+  seq: 59
+}
+
+delete {
+  url: {{baseURL}}/api/v0/projects/{{projectA}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("delete_project_a: status and schema header", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+  });
+  test("delete_project_a: response", function () {
+    const body = res.getBody();
+    expect(body.id).to.equal(bru.getVar("projectA"));
+  });
+}

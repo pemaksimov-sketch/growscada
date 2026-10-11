@@ -50,7 +50,24 @@ func (s widgetTypeServiceImpl) validateChangedTypeHints(ctx context.Context, old
 	if len(changed) == 0 {
 		return nil
 	}
-	scenes, err := s.sceneRepository.FindByWidgetTypeID(ctx, updated.ID())
+	scopes := []WidgetBindingScope{{Scenes: s.sceneRepository, Tags: s.tagRepository}}
+	if s.bindingScopes != nil {
+		var err error
+		scopes, err = s.bindingScopes(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	for _, scope := range scopes {
+		if err := validateChangedBindingsInScope(ctx, scope, updated, changed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateChangedBindingsInScope(ctx context.Context, scope WidgetBindingScope, updated library.WidgetType, changed []library.InputPort) error {
+	scenes, err := scope.Scenes.FindByWidgetTypeID(ctx, updated.ID())
 	if err != nil {
 		return fmt.Errorf("cannot inspect existing port bindings: %w", err)
 	}
@@ -59,7 +76,7 @@ func (s widgetTypeServiceImpl) validateChangedTypeHints(ctx context.Context, old
 			if widget.TypeID() != updated.ID() {
 				continue
 			}
-			if err := validatePortBindingTypes(ctx, s.tagRepository, changed, widget.PortBindings()); err != nil {
+			if err := validatePortBindingTypes(ctx, scope.Tags, changed, widget.PortBindings()); err != nil {
 				return fmt.Errorf("scene %s widget %s: %w", sc.ID(), widget.ID(), err)
 			}
 		}

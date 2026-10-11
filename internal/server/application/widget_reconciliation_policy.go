@@ -15,13 +15,33 @@ import (
 type WidgetReconciliationPolicy struct {
 	repository      library.WidgetTypeRepository
 	sceneRepository scene.SceneRepository
+	scopes          func(context.Context) ([]WidgetBindingScope, error)
 }
 
 func NewWidgetReconciliationPolicy(types library.WidgetTypeRepository, scenes scene.SceneRepository) *WidgetReconciliationPolicy {
 	return &WidgetReconciliationPolicy{repository: types, sceneRepository: scenes}
 }
 
+// Until Library Release pinning (task 33), a shared type update reconciles
+// every project's scenes through that project's repositories. No unscoped
+// repository or request context is used by this background subscriber.
+func NewProjectWidgetReconciliationPolicy(types library.WidgetTypeRepository, scopes func(context.Context) ([]WidgetBindingScope, error)) *WidgetReconciliationPolicy {
+	return &WidgetReconciliationPolicy{repository: types, scopes: scopes}
+}
+
 func (s *WidgetReconciliationPolicy) Handle(ctx context.Context, e event.Event) error {
+	if s.scopes != nil {
+		scopes, err := s.scopes(ctx)
+		if err != nil {
+			return err
+		}
+		for _, scope := range scopes {
+			if err := NewWidgetReconciliationPolicy(s.repository, scope.Scenes).Handle(ctx, e); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	changed, ok := e.(library.WidgetTypeUpdatedEvent)
 	if !ok || e.Type() != event.EventTypeWidgetTypeUpdated {
 		return fmt.Errorf("reconciliation: unexpected event %s", e.Type())

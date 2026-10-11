@@ -27,18 +27,33 @@ type widgetTypeServiceImpl struct {
 	repository      library.WidgetTypeRepository
 	sceneRepository scene.SceneRepository
 	tagRepository   tag.TagRepository
+	bindingScopes   func(context.Context) ([]WidgetBindingScope, error)
 }
 
 var _ WidgetTypeService = (*widgetTypeServiceImpl)(nil)
 
 // NewWidgetTypeService returns the widget type service. The events of its
 // changes are recorded by the aggregates and saved with them (ADR 0008).
-func NewWidgetTypeService(aRepository library.WidgetTypeRepository, aSceneRepository scene.SceneRepository, tagRepo tag.TagRepository) WidgetTypeService {
-	return &widgetTypeServiceImpl{
+type WidgetBindingScope struct {
+	Scenes scene.SceneRepository
+	Tags   tag.TagRepository
+}
+type WidgetTypeServiceOption func(*widgetTypeServiceImpl)
+
+func WithWidgetTypeScopes(scopes func(context.Context) ([]WidgetBindingScope, error)) WidgetTypeServiceOption {
+	return func(s *widgetTypeServiceImpl) { s.bindingScopes = scopes }
+}
+
+func NewWidgetTypeService(aRepository library.WidgetTypeRepository, aSceneRepository scene.SceneRepository, tagRepo tag.TagRepository, opts ...WidgetTypeServiceOption) WidgetTypeService {
+	s := &widgetTypeServiceImpl{
 		repository:      aRepository,
 		sceneRepository: aSceneRepository,
 		tagRepository:   tagRepo,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 func (s widgetTypeServiceImpl) FindAllWidgetTypes(ctx context.Context) ([]appdto.WidgetType, error) {

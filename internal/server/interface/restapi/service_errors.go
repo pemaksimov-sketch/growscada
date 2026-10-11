@@ -3,11 +3,13 @@ package restapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
 	"github.com/kipitix/growscada/internal/server/application"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 )
@@ -33,6 +35,7 @@ func serviceProblem(r *http.Request, err error) *ProblemDetails {
 		cause        error
 		resource, id string
 	}{
+		{project.ErrNotFound, "Project", r.PathValue("project")},
 		{scene.ErrSceneNotFound, "Scene", sceneID},
 		{scene.ErrWidgetNotFound, "Widget", r.PathValue("widgetId")},
 		{tag.ErrTagNotFound, "Tag", r.PathValue("id")},
@@ -46,6 +49,8 @@ func serviceProblem(r *http.Request, err error) *ProblemDetails {
 		cause    error
 		resource string
 	}{
+		{project.ErrConflict, "project"},
+		{project.ErrNameTaken, "project"},
 		{scene.ErrSceneConflict, "scene"},
 		{tag.ErrTagConflict, "tag"},
 		{tag.ErrTagNameTaken, "tag"},
@@ -62,7 +67,7 @@ func serviceProblem(r *http.Request, err error) *ProblemDetails {
 // sendServiceError is the only mapping from application/domain errors to HTTP.
 // A name-filtered tag listing keeps its established empty-list semantics.
 func sendServiceError(w http.ResponseWriter, r *http.Request, err error) {
-	if r.Method == http.MethodGet && r.URL.Path == apiv0.PathPrefix+"/tags" && r.URL.Query().Has(apiv0.TagsQueryName) && errors.Is(err, tag.ErrTagNotFound) {
+	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/tags") && r.URL.Query().Has(apiv0.TagsQueryName) && errors.Is(err, tag.ErrTagNotFound) {
 		sendJSONResponse(w, http.StatusOK, newGetTagsResponse(nil))
 		return
 	}

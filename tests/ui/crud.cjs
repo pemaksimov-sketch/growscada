@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 // deletions use actual UI controls; REST only observes persisted results.
 module.exports = async function checkCRUD(page, api, until, output) {
   const clickMode = name => page.getByText(name, { exact: true }).click();
-  page.on('dialog', dialog => dialog.accept());
+  const acceptDialog = dialog => dialog.accept();
+  page.on('dialog', acceptDialog);
   await clickMode('Library');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
   const newType = page.getByText('New Widget Type', { exact: true });
@@ -49,7 +50,7 @@ module.exports = async function checkCRUD(page, api, until, output) {
   // Deliberately overlap two real edits while the first HTTP write is slow.
   // They share the Scene version and must both persist without a self-conflict.
   const beforeRapid = await api(`/scenes/${scene.id}`);
-  const sceneURL = `http://localhost:9090/api/v0/scenes/${scene.id}`;
+  const sceneURL = `**/scenes/${scene.id}`;
   let delayed = false;
   const delayFirstWrite = async route => {
     if (route.request().method() === 'PUT' && !delayed) {
@@ -170,4 +171,5 @@ module.exports = async function checkCRUD(page, api, until, output) {
   await page.getByText('Scenes', { exact: true }).click();
   await page.getByText('Browser QA', { exact: true }).click();
   console.log('PASS: UI CRUD, HTTP error toast, background drop/resize/rotation');
+  page.off('dialog', acceptDialog);
 };

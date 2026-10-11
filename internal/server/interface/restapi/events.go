@@ -38,7 +38,7 @@ func (h *EventsHandlers) GetEvents(w http.ResponseWriter, r *http.Request) {
 
 	// Checked before writing any response so a rejection can still be a
 	// normal JSON error instead of an already-committed SSE stream.
-	c, ok := h.hub.addClient()
+	c, ok := h.hub.addClient(r.PathValue("project"))
 	if !ok {
 		sendJSONResponse(w, http.StatusServiceUnavailable, NewServiceUnavailableError("event stream unavailable: connection limit reached or server shutting down", r.URL.Path))
 		return

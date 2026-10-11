@@ -8,7 +8,8 @@ type Event struct {
 	Type      string       `json:"type"`
 	Timestamp string       `json:"timestamp"`
 	ID        string       `json:"id,omitempty"`
-	SceneID   string       `json:"scene_id,omitempty"` // owning scene for widget events
+	SceneID   string       `json:"scene_id,omitempty"`   // owning scene for widget events
+	ProjectID string       `json:"project_id,omitempty"` // empty for shared library/system events
 	Tag       *TagResponse `json:"tag,omitempty"`
 }
 
@@ -30,6 +31,9 @@ const (
 	EventSceneDeleted       = "scene_deleted"
 	EventClientConnected    = "client_connected"
 	EventClientDisconnected = "client_disconnected"
+	EventProjectCreated     = "project_created"
+	EventProjectUpdated     = "project_updated"
+	EventProjectDeleted     = "project_deleted"
 )
 
 func EventTypes() []string {
@@ -37,5 +41,5 @@ func EventTypes() []string {
 		EventWidgetTypeCreated, EventWidgetTypeUpdated, EventWidgetTypeDeleted,
 		EventWidgetCreated, EventWidgetUpdated, EventWidgetDeleted,
 		EventSceneCreated, EventSceneUpdated, EventSceneDeleted,
-		EventClientConnected, EventClientDisconnected}
+		EventClientConnected, EventClientDisconnected, EventProjectCreated, EventProjectUpdated, EventProjectDeleted}
 }

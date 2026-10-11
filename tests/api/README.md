@@ -15,6 +15,11 @@ Requests depend on IDs/versions captured from previous responses; do not run
 them in parallel. The exploratory `growscada_server` collection remains for
 manual requests, including the intentionally open-ended SSE stream.
 
+The ordered suite also exercises the project catalog, identical tag names in
+two projects, foreign-resource reads/writes, project-scoped bindings, shared
+Library validation, optimistic metadata conflicts and isolated cascading delete.
+Legacy routes continue to address the seeded Main project.
+
 GitHub and GitVerse workflow files invoke the same script. GitVerse execution
 requires a copy of the repository and a Linux runner with Docker/Compose;
 adding its workflow alone does not provision an account or a runner.

@@ -10,6 +10,7 @@ package operation
 import apiv0 "github.com/kipitix/growscada/contract/api/v0"
 
 import (
+	"github.com/google/uuid"
 	"github.com/kipitix/growscada/internal/apiclient"
 	"github.com/maxence-charriere/go-app/v10/pkg/app"
 	"net/http"
@@ -29,6 +30,7 @@ type Operation struct {
 	ThemeMode string // exported so go-app detects theme changes and re-renders
 	client    apiclient.Server
 	tasks     uiutil.Tasks
+	projectID uuid.UUID
 
 	scenes      []livescene.Scene
 	widgetTypes map[string]livescene.WidgetType
@@ -48,18 +50,38 @@ type Operation struct {
 	tagsReloader        uiutil.Reloader
 }
 
-func NewOperation(apiServerURL string) *Operation {
-	return &Operation{client: apiclient.New(apiServerURL, http.DefaultClient)}
+func NewOperation(apiServerURL string, projectIDs ...uuid.UUID) *Operation {
+	client := apiclient.New(apiServerURL, http.DefaultClient)
+	projectID := uuid.Nil
+	if len(projectIDs) > 0 {
+		projectID = projectIDs[0]
+		client = client.ForProject(projectID)
+	}
+	return &Operation{client: client, projectID: projectID}
+}
+
+func (o *Operation) selectionKey() string {
+	if o.projectID == uuid.Nil || o.projectID.String() == apiv0.MainProjectID {
+		return sceneStorageKey
+	}
+	return sceneStorageKey + ":" + o.projectID.String()
 }
 
 func (o *Operation) OnMount(ctx app.Context) {
 	o.compoCtx = ctx
 	o.tasks = uiutil.BrowserTasks(ctx)
+	remember := o.tasks.Remember
+	o.tasks.Remember = func(key string, value any) {
+		if key == sceneStorageKey {
+			key = o.selectionKey()
+		}
+		remember(key, value)
+	}
 	o.widgetTypes = map[string]livescene.WidgetType{}
 	o.tags = map[string]livescene.Tag{}
 	ctx.ObserveState("theme", &o.ThemeMode)
 	ctx.ObserveState(eventlog.StateDisconnected, &o.disconnected)
-	ctx.LocalStorage().Get(sceneStorageKey, &o.selectedSceneID)
+	ctx.LocalStorage().Get(o.selectionKey(), &o.selectedSceneID)
 
 	o.reload(ctx, eventlog.AllTargets)
 

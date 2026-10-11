@@ -51,7 +51,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func NewRouter(tagService application.TagService, widgetTypeService application.WidgetTypeService, sceneService application.SceneService, eventBus eventbus.EventBus, maxSSEClients int) *APIRouter {
+func NewRouter(tagService application.TagService, widgetTypeService application.WidgetTypeService, sceneService application.SceneService, eventBus eventbus.EventBus, maxSSEClients int, opts ...RouterOption) *APIRouter {
 	router := &APIRouter{}
 	router.serveMux = http.NewServeMux()
 
@@ -85,6 +85,9 @@ func NewRouter(tagService application.TagService, widgetTypeService application.
 
 	router.eventsHandlers = NewEventsHandler(eventBus, maxSSEClients)
 	router.serveMux.HandleFunc("GET "+apiv0.PathPrefix+"/events", router.eventsHandlers.GetEvents)
+	for _, opt := range opts {
+		opt(router)
+	}
 
 	router.serveMux.HandleFunc(preVersioningPathPrefix+"/", preVersioningGone)
 

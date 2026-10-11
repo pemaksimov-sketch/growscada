@@ -42,8 +42,8 @@ func (d *Dispatcher) enqueuePolicies(ctx context.Context, row outboxRow, e event
 		if p.eventType != e.Type() {
 			continue
 		}
-		_, err := d.db.ExecContext(ctx, `INSERT INTO policy_outbox (source_seq,subscriber,type,payload)
-		 VALUES ($1,$2,$3,$4) ON CONFLICT (source_seq,subscriber) DO NOTHING`, row.seq, p.name, row.eventType, string(row.payload))
+		_, err := d.db.ExecContext(ctx, `INSERT INTO policy_outbox (source_seq,subscriber,type,payload,project_id)
+		 VALUES ($1,$2,$3,$4,$5) ON CONFLICT (source_seq,subscriber) DO NOTHING`, row.seq, p.name, row.eventType, string(row.payload), row.projectID)
 		if err != nil {
 			return fmt.Errorf("enqueue policy %s: %w", p.name, err)
 		}
@@ -94,7 +94,7 @@ func (d *Dispatcher) drainPolicy(ctx context.Context, p *policy) (int, error) {
 		return done, err
 	}
 	for {
-		rows, err := d.db.QueryContext(ctx, `SELECT seq,type,payload FROM policy_outbox
+		rows, err := d.db.QueryContext(ctx, `SELECT seq,type,payload,project_id FROM policy_outbox
 		 WHERE subscriber=$1 AND NOT completed ORDER BY seq LIMIT $2`, p.name, batchSize)
 		if err != nil {
 			return done, err
@@ -102,7 +102,7 @@ func (d *Dispatcher) drainPolicy(ctx context.Context, p *policy) (int, error) {
 		batch := []outboxRow{}
 		for rows.Next() {
 			var row outboxRow
-			if err = rows.Scan(&row.seq, &row.eventType, &row.payload); err != nil {
+			if err = rows.Scan(&row.seq, &row.eventType, &row.payload, &row.projectID); err != nil {
 				break
 			}
 			batch = append(batch, row)

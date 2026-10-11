@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Project isolation (task 31): API 0.3 adds Project CRUD and `/projects/{project}/tags`, `/scenes` and `/events`. Typed scoped repositories isolate reads, writes, tag names, widget bindings and SSE; existing data migrates to Main in the default Organization. The UI selects/manages projects; growctl accepts `--project`/`GROWCTL_PROJECT` and manifest 0.2 `metadata.project`; simulator YAML accepts `project`. Older unscoped API paths and manifests retain the Main compatibility alias. Library types stay organization-wide until task 33.
+
 - Scene alignment guides (task 41): while moving or resizing, Project shows nearby edges and centers of the canvas and other widgets, including rotated bounds. The Guides toggle is remembered locally. Guides are visual, leave coordinates unchanged and do not intercept pointer input.
 
 - API integration (task 30): `make test_api` builds the server/WASM container and runs 36 ordered Bruno requests against an isolated migrated PostgreSQL database. GitHub and GitVerse workflow definitions invoke the same script; JUnit results and container logs are retained. `DATABASE_DSN` configures the server database, retaining the previous local default.

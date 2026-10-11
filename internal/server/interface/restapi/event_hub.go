@@ -9,6 +9,7 @@ import (
 	"github.com/kipitix/growscada/internal/server/application/appdto"
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
@@ -33,8 +34,9 @@ type eventHub struct {
 }
 
 type eventClient struct {
-	messages chan []byte
-	closed   bool
+	messages  chan []byte
+	closed    bool
+	projectID string
 }
 
 func newEventHub(bus eventbus.EventBus, maxClients int) *eventHub {
@@ -80,6 +82,10 @@ func (h *eventHub) Close() {
 }
 
 func (h *eventHub) broadcast(e event.Event) {
+	projectID := ""
+	if scoped, ok := e.(interface{ ScopeProjectID() string }); ok {
+		projectID = scoped.ScopeProjectID()
+	}
 	h.mu.Lock()
 	if len(h.clients) == 0 {
 		h.mu.Unlock()
@@ -92,6 +98,7 @@ func (h *eventHub) broadcast(e event.Event) {
 		Timestamp: e.Timestamp().Time().Format(time.RFC3339),
 		ID:        eventSourceID(e),
 		SceneID:   eventSceneID(e),
+		ProjectID: projectID,
 		Tag:       eventTag(e),
 	})
 	if err != nil {
@@ -101,7 +108,7 @@ func (h *eventHub) broadcast(e event.Event) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for c := range h.clients {
-		if c.closed {
+		if c.closed || (projectID != "" && c.projectID != projectID) {
 			continue
 		}
 		select {
@@ -124,7 +131,7 @@ func eventSceneID(e event.Event) string {
 // addClient registers a new SSE connection and returns its message channel.
 // It refuses to register after Close or beyond maxClients, returning ok=false so the
 // caller can reject the connection before committing to any response.
-func (h *eventHub) addClient() (c *eventClient, ok bool) {
+func (h *eventHub) addClient(projectIDs ...string) (c *eventClient, ok bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -132,7 +139,11 @@ func (h *eventHub) addClient() (c *eventClient, ok bool) {
 		return nil, false
 	}
 
-	c = &eventClient{messages: make(chan []byte, eventClientBufferSize)}
+	projectID := apiv0.MainProjectID
+	if len(projectIDs) > 0 && projectIDs[0] != "" {
+		projectID = projectIDs[0]
+	}
+	c = &eventClient{messages: make(chan []byte, eventClientBufferSize), projectID: projectID}
 	h.clients[c] = struct{}{}
 	return c, true
 }
@@ -156,6 +167,8 @@ func (h *eventHub) removeClient(c *eventClient) {
 // events), if any.
 func eventSourceID(e event.Event) string {
 	switch ev := e.(type) {
+	case project.Event:
+		return ev.ProjectID().String()
 	case tag.TagEvent:
 		return ev.TagID().String()
 	case scene.WidgetEvent:

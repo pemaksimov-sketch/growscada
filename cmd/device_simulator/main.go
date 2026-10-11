@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"log/slog"
 	"net"
 	"net/http"
@@ -54,7 +55,11 @@ func main() {
 	// Create a graceful shutdown manager
 	gracedownManager := gracedown.NewManager(gracedown.WithLogger(slogAdapter{}))
 
-	link := devicelink.NewRESTLink(apiclient.New(cfg.Server, &http.Client{Timeout: 10 * time.Second}))
+	client := apiclient.New(cfg.Server, &http.Client{Timeout: 10 * time.Second})
+	if cfg.Project != "" {
+		client = client.ForProject(uuid.MustParse(cfg.Project))
+	}
+	link := devicelink.NewRESTLink(client)
 	device := devicesim.New(cfg, link, devicesim.Options{})
 
 	// INTERFACE COMPONENTS

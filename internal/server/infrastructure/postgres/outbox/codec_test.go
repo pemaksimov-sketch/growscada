@@ -7,6 +7,7 @@ import (
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
+	"github.com/kipitix/growscada/internal/server/domain/project"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
 	"github.com/kipitix/growscada/internal/server/domain/tag"
 	"github.com/kipitix/growscada/internal/server/domain/version"
@@ -38,7 +39,11 @@ func sampleEvents(t *testing.T) []event.Event {
 	wtID := id.NewID[library.WidgetType]()
 	sceneID := id.NewID[scene.Scene]()
 	widgetID := id.NewID[scene.Widget]()
+	projectID := id.NewID[project.Project]()
 	return []event.Event{
+		project.NewEvent(event.EventTypeProjectCreated, projectID, ts),
+		project.NewEvent(event.EventTypeProjectUpdated, projectID, ts),
+		project.NewEvent(event.EventTypeProjectDeleted, projectID, ts),
 		tag.NewTagCreatedEvent(tagID, ts),
 		tag.NewTagUpdatedEvent(aTag, ts),
 		tag.NewTagDeletedEvent(tagID, ts),
@@ -92,6 +97,10 @@ func TestCodec_EveryEventSurvivesRoundTrip(t *testing.T) {
 func assertSameSubject(t *testing.T, original, decoded event.Event) {
 	t.Helper()
 	switch want := original.(type) {
+	case project.Event:
+		if got := decoded.(project.Event); got.ProjectID() != want.ProjectID() {
+			t.Fatalf("project ID %s, want %s", got.ProjectID(), want.ProjectID())
+		}
 	case tag.TagUpdatedEvent:
 		got := decoded.(tag.TagUpdatedEvent)
 		w, g := want.Tag(), got.Tag()

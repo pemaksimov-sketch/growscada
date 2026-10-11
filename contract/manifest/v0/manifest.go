@@ -18,7 +18,7 @@ import (
 // SchemaVersion is the version of the manifest contract this package
 // describes.
 // A function rather than a variable, so no importer can change it.
-func SchemaVersion() contract.SchemaVersion { return contract.SchemaVersion{Major: 0, Minor: 1} }
+func SchemaVersion() contract.SchemaVersion { return contract.SchemaVersion{Major: 0, Minor: 2} }
 
 // apiVersionPrefix precedes the version in apiVersion.
 const apiVersionPrefix = "growscada/v"
@@ -69,7 +69,8 @@ type TagDocument struct {
 
 // Metadata identifies the declared entity.
 type Metadata struct {
-	Name string `yaml:"name"`
+	Name    string `yaml:"name"`
+	Project string `yaml:"project,omitempty"` // Project UUID; omitted means CLI context.
 }
 
 // TagSpec declares a Tag. InitialValue and InitialQuality are applied only

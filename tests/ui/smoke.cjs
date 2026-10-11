@@ -96,7 +96,9 @@ async function api(resource, method = 'GET', body) {
     const other = await api('/scenes', 'POST', { name: 'Other scene', width: 300, height: 200, background_html: '' });
     await sleep(1000); // allow the scene-created refresh to settle
     const requests = [];
-    const recordRequest = req => { if (req.method() === 'GET') requests.push(new URL(req.url()).pathname); };
+    const recordRequest = req => {
+      if (req.method() === 'GET') requests.push(new URL(req.url()).pathname.replace(/\/projects\/[0-9a-f-]+(?=\/)/, ''));
+    };
     page.on('request', recordRequest);
     await api(`/tags/${tag.id}/value`, 'PATCH', {value:'9007199254740993', quality:'good', version:1});
     await sleep(500);
@@ -197,6 +199,7 @@ async function api(resource, method = 'GET', body) {
     await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).position.x === 160);
     assert.deepEqual(conflicts, [], 'Drag after reconciliation conflicted');
     await require('./crud.cjs')(page, api, until, output);
+    await require('./projects.cjs')(page, api, until);
     assert.deepEqual(errors, [], 'Browser runtime errors');
     await page.getByText('Operation', { exact: true }).click();
     // Project's background remains visible during the mode transition.
