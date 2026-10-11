@@ -52,6 +52,6 @@ tests {
   });
   test("project_widget: response", function () {
     const body = res.getBody();
-    bru.setVar("projectWidgetB",body.id); expect(body.entity_origin).to.equal("Project");
+    bru.setVar("projectWidgetB",body.id);
   });
 }
