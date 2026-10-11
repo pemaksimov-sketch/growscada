@@ -1,6 +1,8 @@
 package restapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -10,14 +12,15 @@ import (
 )
 
 type ProjectServices struct {
-	Tags   application.TagService
-	Scenes application.SceneService
+	Tags        application.TagService
+	Definitions application.TagDefinitionService
+	Scenes      application.SceneService
 }
 type RouterOption func(*APIRouter)
 
 // WithProjects exposes explicit project routes using services bound to that
 // project by the composition root. The router never knows database/context keys.
-func WithProjects(projects application.ProjectService, services func(uuid.UUID) ProjectServices) RouterOption {
+func WithProjects(projects application.ProjectService, services func(uuid.UUID) ProjectServices, removeRuntime ...func(context.Context, uuid.UUID) error) RouterOption {
 	return func(router *APIRouter) {
 		mux := router.serveMux
 		base := apiv0.PathPrefix + "/projects"
@@ -83,6 +86,12 @@ func WithProjects(projects application.ProjectService, services func(uuid.UUID) 
 				sendServiceError(w, r, err)
 				return
 			}
+			if len(removeRuntime) > 0 && removeRuntime[0] != nil {
+				if err := removeRuntime[0](r.Context(), projectID); err != nil {
+					sendInternalError(w, r, err)
+					return
+				}
+			}
 			sendJSONResponse(w, http.StatusOK, projectResponse(p))
 		})
 		scoped := func(handler func(ProjectServices) http.HandlerFunc) http.HandlerFunc {
@@ -108,6 +117,7 @@ func WithProjects(projects application.ProjectService, services func(uuid.UUID) 
 			{"GET /tags/{id}", func(s ProjectServices) http.HandlerFunc { return NewTagsHandler(s.Tags).GetTagsByID }},
 			{"DELETE /tags/{id}", func(s ProjectServices) http.HandlerFunc { return NewTagsHandler(s.Tags).DeleteTagsByID }},
 			{"PATCH /tags/{id}/value", func(s ProjectServices) http.HandlerFunc { return NewTagsHandler(s.Tags).PatchTagsValue }},
+			{"PUT /tags/{id}/definition", func(s ProjectServices) http.HandlerFunc { return tagDefinitionHandler(s.Definitions) }},
 			{"GET /scenes", func(s ProjectServices) http.HandlerFunc { return NewScenesHandler(s.Scenes).GetScenes }},
 			{"POST /scenes", func(s ProjectServices) http.HandlerFunc { return NewScenesHandler(s.Scenes).PostScenes }},
 			{"GET /scenes/{id}", func(s ProjectServices) http.HandlerFunc { return NewScenesHandler(s.Scenes).GetScenesByID }},
@@ -133,4 +143,27 @@ func WithProjects(projects application.ProjectService, services func(uuid.UUID) 
 
 func projectResponse(p appdto.Project) apiv0.ProjectResponse {
 	return apiv0.ProjectResponse{ID: p.ID, OrganizationID: p.OrganizationID, Name: p.Name, Version: p.Version}
+}
+
+func tagDefinitionHandler(service application.TagDefinitionService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tagID, ok := parsePathUUID(w, r, "id")
+		if !ok {
+			return
+		}
+		if service == nil {
+			sendInternalError(w, r, errors.New("tag definition service unavailable"))
+			return
+		}
+		var request apiv0.UpdateTagDefinitionRequest
+		if !decodeRequest(w, r, &request) {
+			return
+		}
+		updated, err := service.RenameTagDefinition(r.Context(), tagID, request.Name, request.Version)
+		if err != nil {
+			sendServiceError(w, r, err)
+			return
+		}
+		sendJSONResponse(w, http.StatusOK, newTagResponse(updated))
+	}
 }

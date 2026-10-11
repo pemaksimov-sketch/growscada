@@ -23,6 +23,7 @@ func (p *Project) handleServerEvents(ctx app.Context) {
 		if ev.Type == eventlog.EventResync {
 			for i := range p.tags {
 				p.tags[i].Version = 0
+				p.tags[i].Sequence = 0
 			}
 		}
 		targets := eventlog.ReloadTargetsForScene(ev, p.selectedSceneID)

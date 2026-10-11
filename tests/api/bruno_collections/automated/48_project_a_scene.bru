@@ -26,7 +26,7 @@ body:json {
 tests {
   test("project_a_scene: status and schema header", function () {
     expect(res.getStatus()).to.equal(201);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
   });
   test("project_a_scene: response", function () {
     const body = res.getBody();

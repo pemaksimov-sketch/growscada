@@ -18,6 +18,6 @@ tests {
   test("get_widget: response", function () {
     const body = res.getBody();
 
-    expect(body.scene_id).to.equal(bru.getVar("sceneID")); expect(body.port_bindings[0].tag_id).to.equal(bru.getVar("tagID"));
+    expect(body.scene_id).to.equal(bru.getVar("sceneID")); expect(body.port_bindings[0].tag_id).to.equal(bru.getVar("tagID")); expect(body.entity_origin).to.equal("Project");
   });
 }

@@ -90,7 +90,7 @@ func startPostgres(ctx context.Context) (*sql.DB, *tcpostgres.PostgresContainer,
 		container.Terminate(ctx)
 		return nil, nil, err
 	}
-	if err := goose.Up(db, migrationsDir); err != nil {
+	if err := goose.UpTo(db, migrationsDir, 20261011010000); err != nil {
 		db.Close()
 		container.Terminate(ctx)
 		return nil, nil, fmt.Errorf("migrations: %w", err)
@@ -131,7 +131,7 @@ func StartAPI(t *testing.T, db *sql.DB) (*httptest.Server, application.TagServic
 		result := make([]application.WidgetBindingScope, len(projects))
 		for i, p := range projects {
 			scope := repositories.ForProject(db, p.ID(), onCommit)
-			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: scope.Tags()}
+			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: application.NewLegacyTagTypeLookup(scope.Tags())}
 		}
 		return result, nil
 	}

@@ -13,7 +13,7 @@ get {
 tests {
   test("list_projects: status and schema header", function () {
     expect(res.getStatus()).to.equal(200);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
   });
   test("list_projects: response", function () {
     const body = res.getBody();

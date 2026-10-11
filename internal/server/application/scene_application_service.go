@@ -34,7 +34,7 @@ type SceneService interface {
 type sceneServiceImpl struct {
 	repository           scene.SceneRepository
 	widgetTypeRepository library.WidgetTypeRepository
-	tagRepository        tag.TagRepository
+	tagTypes             TagTypeLookup
 }
 
 var _ SceneService = (*sceneServiceImpl)(nil)
@@ -42,7 +42,12 @@ var _ SceneService = (*sceneServiceImpl)(nil)
 // NewSceneService returns the scene service. The events of its changes are
 // recorded by the Scene and saved with it (ADR 0008).
 func NewSceneService(repo scene.SceneRepository, widgetTypeRepo library.WidgetTypeRepository, tagRepo tag.TagRepository) SceneService {
-	return &sceneServiceImpl{repository: repo, widgetTypeRepository: widgetTypeRepo, tagRepository: tagRepo}
+	return &sceneServiceImpl{repository: repo, widgetTypeRepository: widgetTypeRepo, tagTypes: legacyTagTypeLookup{tagRepo}}
+}
+
+// NewSplitSceneService validates bindings from engineering definitions only.
+func NewSplitSceneService(repo scene.SceneRepository, widgetTypeRepo library.WidgetTypeRepository, definitions tag.DefinitionRepository) SceneService {
+	return &sceneServiceImpl{repository: repo, widgetTypeRepository: widgetTypeRepo, tagTypes: definitionTagTypeLookup{definitions}}
 }
 
 // loadScene finds the scene named by the caller; ErrSceneNotFound if there is none.
@@ -239,7 +244,7 @@ func (s sceneServiceImpl) CreateWidget(ctx context.Context, rawSceneID uuid.UUID
 	if err != nil {
 		return appdto.Widget{}, fmt.Errorf("cannot create widget: %w", widgetChangeError(err))
 	}
-	if err := validatePortBindingTypes(ctx, s.tagRepository, wt.InputPorts(), newWidget.PortBindings()); err != nil {
+	if err := validatePortBindingTypes(ctx, s.tagTypes, wt.InputPorts(), newWidget.PortBindings()); err != nil {
 		return appdto.Widget{}, fmt.Errorf("cannot create widget: %w", err)
 	}
 
@@ -282,7 +287,7 @@ func (s sceneServiceImpl) UpdateWidget(ctx context.Context, rawSceneID, rawWidge
 	if err != nil {
 		return appdto.Widget{}, fmt.Errorf("cannot update widget: %w", widgetChangeError(err))
 	}
-	if err := validatePortBindingTypes(ctx, s.tagRepository, wt.InputPorts(), updated.PortBindings()); err != nil {
+	if err := validatePortBindingTypes(ctx, s.tagTypes, wt.InputPorts(), updated.PortBindings()); err != nil {
 		return appdto.Widget{}, fmt.Errorf("cannot update widget: %w", err)
 	}
 

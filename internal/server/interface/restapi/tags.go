@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	apiv0 "github.com/kipitix/growscada/contract/api/v0"
@@ -133,6 +134,28 @@ func (h TagsHandlers) PatchTagsValue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sendJSONResponse(w, http.StatusOK, newUpdateTagResponse(updatedTag))
+}
+
+func (h TagsHandlers) PutTagDefinition(w http.ResponseWriter, r *http.Request) {
+	tagID, ok := parsePathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var request apiv0.UpdateTagDefinitionRequest
+	if !decodeRequest(w, r, &request) {
+		return
+	}
+	service, ok := h.service.(application.TagDefinitionService)
+	if !ok {
+		sendInternalError(w, r, errors.New("tag definition service unavailable"))
+		return
+	}
+	updated, err := service.RenameTagDefinition(r.Context(), tagID, request.Name, request.Version)
+	if err != nil {
+		sendServiceError(w, r, err)
+		return
+	}
+	sendJSONResponse(w, http.StatusOK, newTagResponse(updated))
 }
 
 // PostTags handles POST /tags for creating a new tag

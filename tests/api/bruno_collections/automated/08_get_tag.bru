@@ -18,6 +18,6 @@ tests {
   test("get_tag: response", function () {
     const body = res.getBody();
 
-    expect(body.value).to.equal("9007199254740993"); expect(body.version).to.equal(2);
+    expect(body.value).to.equal("2"); expect(body.version).to.equal(1); expect(body.sequence).to.equal(3);
   });
 }

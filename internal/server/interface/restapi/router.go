@@ -61,6 +61,7 @@ func NewRouter(tagService application.TagService, widgetTypeService application.
 	router.serveMux.HandleFunc("POST "+apiv0.PathPrefix+"/tags", router.tagsHandlers.PostTags)
 	router.serveMux.HandleFunc("DELETE "+apiv0.PathPrefix+"/tags/{id}", router.tagsHandlers.DeleteTagsByID)
 	router.serveMux.HandleFunc("PATCH "+apiv0.PathPrefix+"/tags/{id}/value", router.tagsHandlers.PatchTagsValue)
+	router.serveMux.HandleFunc("PUT "+apiv0.PathPrefix+"/tags/{id}/definition", router.tagsHandlers.PutTagDefinition)
 
 	router.widgetTypesHandlers = NewWidgetTypesHandler(widgetTypeService)
 	router.serveMux.HandleFunc("GET "+apiv0.PathPrefix+"/widget-types", router.widgetTypesHandlers.GetWidgetTypes)

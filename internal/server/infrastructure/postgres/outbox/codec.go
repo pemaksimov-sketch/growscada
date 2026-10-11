@@ -99,6 +99,8 @@ func decodeScoped(eventType event.EventType, data []byte, projectID string) (eve
 		return project.NewEvent(eventType, id.NewID(id.IDWithUUID[project.Project](p.ID)), opts...), nil
 	case event.EventTypeTagCreated:
 		return tag.NewTagCreatedEvent(tagID, opts...), nil
+	case event.EventTypeTagDefinitionUpdated:
+		return tag.NewDefinitionUpdatedEvent(tagID, opts...), nil
 	case event.EventTypeTagUpdated:
 		t, err := decodeTagState(tagID, p.Tag)
 		if err != nil {

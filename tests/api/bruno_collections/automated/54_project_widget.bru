@@ -48,10 +48,10 @@ body:json {
 tests {
   test("project_widget: status and schema header", function () {
     expect(res.getStatus()).to.equal(201);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
   });
   test("project_widget: response", function () {
     const body = res.getBody();
-    bru.setVar("projectWidgetB",body.id);
+    bru.setVar("projectWidgetB",body.id); expect(body.entity_origin).to.equal("Project");
   });
 }

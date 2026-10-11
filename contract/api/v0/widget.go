@@ -80,6 +80,7 @@ type PortBinding struct {
 // Widget has no version of its own — SceneVersion is the owning scene's current
 // version, the sole optimistic-lock boundary for the scene and all its widgets.
 type WidgetResponse struct {
+	EntityOrigin    string                  `json:"entity_origin,omitempty"`
 	ID              uuid.UUID               `json:"id"`
 	Name            string                  `json:"name"`
 	Position        PositionResponse        `json:"position"`

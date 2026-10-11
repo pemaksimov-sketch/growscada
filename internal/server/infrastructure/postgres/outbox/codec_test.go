@@ -45,6 +45,7 @@ func sampleEvents(t *testing.T) []event.Event {
 		project.NewEvent(event.EventTypeProjectUpdated, projectID, ts),
 		project.NewEvent(event.EventTypeProjectDeleted, projectID, ts),
 		tag.NewTagCreatedEvent(tagID, ts),
+		tag.NewDefinitionUpdatedEvent(tagID, ts),
 		tag.NewTagUpdatedEvent(aTag, ts),
 		tag.NewTagDeletedEvent(tagID, ts),
 		library.NewWidgetTypeCreatedEvent(wtID, ts),

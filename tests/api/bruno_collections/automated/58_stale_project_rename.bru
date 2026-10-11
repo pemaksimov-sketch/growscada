@@ -24,7 +24,7 @@ body:json {
 tests {
   test("stale_project_rename: status and schema header", function () {
     expect(res.getStatus()).to.equal(409);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
   });
   test("stale_project_rename: response", function () {
     const body = res.getBody();

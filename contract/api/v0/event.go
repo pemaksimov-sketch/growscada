@@ -16,24 +16,25 @@ type Event struct {
 // Event names are shared by API producers and consumers. Unknown names must
 // still be tolerated, so Event.Type intentionally remains an open string.
 const (
-	EventSystemReady        = "system_ready"
-	EventTagCreated         = "tag_created"
-	EventTagUpdated         = "tag_updated"
-	EventTagDeleted         = "tag_deleted"
-	EventWidgetTypeCreated  = "widget_type_created"
-	EventWidgetTypeUpdated  = "widget_type_updated"
-	EventWidgetTypeDeleted  = "widget_type_deleted"
-	EventWidgetCreated      = "widget_created"
-	EventWidgetUpdated      = "widget_updated"
-	EventWidgetDeleted      = "widget_deleted"
-	EventSceneCreated       = "scene_created"
-	EventSceneUpdated       = "scene_updated"
-	EventSceneDeleted       = "scene_deleted"
-	EventClientConnected    = "client_connected"
-	EventClientDisconnected = "client_disconnected"
-	EventProjectCreated     = "project_created"
-	EventProjectUpdated     = "project_updated"
-	EventProjectDeleted     = "project_deleted"
+	EventSystemReady          = "system_ready"
+	EventTagCreated           = "tag_created"
+	EventTagUpdated           = "tag_updated"
+	EventTagDeleted           = "tag_deleted"
+	EventWidgetTypeCreated    = "widget_type_created"
+	EventWidgetTypeUpdated    = "widget_type_updated"
+	EventWidgetTypeDeleted    = "widget_type_deleted"
+	EventWidgetCreated        = "widget_created"
+	EventWidgetUpdated        = "widget_updated"
+	EventWidgetDeleted        = "widget_deleted"
+	EventSceneCreated         = "scene_created"
+	EventSceneUpdated         = "scene_updated"
+	EventSceneDeleted         = "scene_deleted"
+	EventClientConnected      = "client_connected"
+	EventClientDisconnected   = "client_disconnected"
+	EventProjectCreated       = "project_created"
+	EventProjectUpdated       = "project_updated"
+	EventProjectDeleted       = "project_deleted"
+	EventTagDefinitionUpdated = "tag_definition_updated"
 )
 
 func EventTypes() []string {
@@ -41,5 +42,5 @@ func EventTypes() []string {
 		EventWidgetTypeCreated, EventWidgetTypeUpdated, EventWidgetTypeDeleted,
 		EventWidgetCreated, EventWidgetUpdated, EventWidgetDeleted,
 		EventSceneCreated, EventSceneUpdated, EventSceneDeleted,
-		EventClientConnected, EventClientDisconnected, EventProjectCreated, EventProjectUpdated, EventProjectDeleted}
+		EventClientConnected, EventClientDisconnected, EventProjectCreated, EventProjectUpdated, EventProjectDeleted, EventTagDefinitionUpdated}
 }

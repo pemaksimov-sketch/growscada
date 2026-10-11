@@ -12,7 +12,7 @@ import (
 
 // Only the listed ports are checked. Widget writes supply all ports after the
 // Scene checks their names; WidgetType edits supply only changed type hints.
-func validatePortBindingTypes(ctx context.Context, repo tag.TagRepository, ports []library.InputPort, bindings []scene.PortBinding) error {
+func validatePortBindingTypes(ctx context.Context, repo TagTypeLookup, ports []library.InputPort, bindings []scene.PortBinding) error {
 	hints := make(map[library.InputPortName]library.PortTypeHint, len(ports))
 	for _, port := range ports {
 		hints[port.Name()] = port.TypeHint()
@@ -22,15 +22,15 @@ func validatePortBindingTypes(ctx context.Context, repo tag.TagRepository, ports
 		if !check {
 			continue
 		}
-		t, err := repo.FindByID(ctx, binding.TagID())
+		t, err := repo.FindTagType(ctx, binding.TagID())
 		if errors.Is(err, tag.ErrTagNotFound) {
 			return invalidInput(fmt.Errorf("port_bindings: port %q references missing tag %s", binding.PortName(), binding.TagID()))
 		}
 		if err != nil {
 			return fmt.Errorf("cannot find tag for port %q: %w", binding.PortName(), err)
 		}
-		if !hint.Accepts(t.Type()) {
-			return invalidInput(fmt.Errorf("port_bindings: port %q accepts %s, tag %s has type %s", binding.PortName(), hint, binding.TagID(), t.Type()))
+		if !hint.Accepts(t) {
+			return invalidInput(fmt.Errorf("port_bindings: port %q accepts %s, tag %s has type %s", binding.PortName(), hint, binding.TagID(), t))
 		}
 	}
 	return nil
@@ -50,7 +50,7 @@ func (s widgetTypeServiceImpl) validateChangedTypeHints(ctx context.Context, old
 	if len(changed) == 0 {
 		return nil
 	}
-	scopes := []WidgetBindingScope{{Scenes: s.sceneRepository, Tags: s.tagRepository}}
+	scopes := []WidgetBindingScope{{Scenes: s.sceneRepository, Tags: s.tagTypes}}
 	if s.bindingScopes != nil {
 		var err error
 		scopes, err = s.bindingScopes(ctx)

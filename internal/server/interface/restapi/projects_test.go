@@ -24,10 +24,14 @@ func TestProjectAPI_CRUDAndIsolation(t *testing.T) {
 	projectSvc := application.NewProjectService(projects, project.DefaultOrganizationID())
 	main := repositories.ForProject(testDB, project.MainID())
 	types := repositories.NewWidgetTypeRepositoryPostgres(testDB)
+	var removedRuntimeProjects []uuid.UUID
 	router := restapi.NewRouter(application.NewTagService(main.Tags()), application.NewWidgetTypeService(types, main.Scenes(), main.Tags()), application.NewSceneService(main.Scenes(), types, main.Tags()), eventbus.NewEventBus(), 10,
 		restapi.WithProjects(projectSvc, func(projectID uuid.UUID) restapi.ProjectServices {
 			scope := repositories.ForProject(testDB, id.NewID(id.IDWithUUID[project.Project](projectID)))
 			return restapi.ProjectServices{Tags: application.NewTagService(scope.Tags()), Scenes: application.NewSceneService(scope.Scenes(), types, scope.Tags())}
+		}, func(_ context.Context, projectID uuid.UUID) error {
+			removedRuntimeProjects = append(removedRuntimeProjects, projectID)
+			return nil
 		}))
 	defer router.Close()
 	srv := httptest.NewServer(router.ServeMux())
@@ -75,6 +79,9 @@ func TestProjectAPI_CRUDAndIsolation(t *testing.T) {
 	}
 	if _, err := api.DeleteProject(ctx, a.ID); err != nil {
 		t.Fatal(err)
+	}
+	if len(removedRuntimeProjects) != 1 || removedRuntimeProjects[0] != a.ID {
+		t.Fatalf("project deletion did not clean its Runtime state: %v", removedRuntimeProjects)
 	}
 	if _, err := ac.ListTags(ctx); !errors.Is(err, apiclient.ErrNotFound) {
 		t.Fatalf("deleted parent read: %v", err)

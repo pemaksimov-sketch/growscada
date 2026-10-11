@@ -187,6 +187,10 @@ func eventSourceID(e event.Event) string {
 // eventTag returns the Tag state carried by a tag_updated event, or nil for
 // every other event.
 func eventTag(e event.Event) *apiv0.TagResponse {
+	if ev, ok := e.(tag.StateUpdatedEvent); ok {
+		s := ev.State()
+		return &apiv0.TagResponse{ID: s.ID().UUID(), Name: ev.Name().String(), Type: s.Type().String(), Origin: ev.Origin().String(), Value: s.Value().String(), Quality: s.Quality().String(), Sequence: s.Sequence()}
+	}
 	ev, ok := e.(tag.TagUpdatedEvent)
 	if !ok {
 		return nil

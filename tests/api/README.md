@@ -17,8 +17,9 @@ manual requests, including the intentionally open-ended SSE stream.
 
 The ordered suite also exercises the project catalog, identical tag names in
 two projects, foreign-resource reads/writes, project-scoped bindings, shared
-Library validation, optimistic metadata conflicts and isolated cascading delete.
-Legacy routes continue to address the seeded Main project.
+Library validation, optimistic metadata conflicts, split Tag definition and
+Runtime sequence behavior, and isolated cascading delete. Legacy routes
+continue to address the seeded Main project.
 
 GitHub and GitVerse workflow files invoke the same script. GitVerse execution
 requires a copy of the repository and a Linux runner with Docker/Compose;

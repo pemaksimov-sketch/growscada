@@ -42,7 +42,7 @@ func ReloadTargetsFor(eventType string) ReloadTargets {
 		// A widget change bumps its Scene's version (the shared optimistic
 		// lock) without a scene event, so the scenes are reloaded as well.
 		return ReloadTargets{Scenes: true, Widgets: true}
-	case apiv0.EventTagCreated, apiv0.EventTagUpdated, apiv0.EventTagDeleted:
+	case apiv0.EventTagCreated, apiv0.EventTagUpdated, apiv0.EventTagDeleted, apiv0.EventTagDefinitionUpdated:
 		// tag_updated carries the Tag's new state; a mode that applies it
 		// directly (Operation) reloads only when it cannot.
 		return ReloadTargets{Tags: true}

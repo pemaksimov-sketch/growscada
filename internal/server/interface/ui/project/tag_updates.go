@@ -9,7 +9,14 @@ import (
 func decodeTagUpdate(raw json.RawMessage) (tagItem, bool) {
 	var tag tagItem
 	err := json.Unmarshal(raw, &tag)
-	return tag, err == nil && tag.ID != uuid.Nil && tag.Version > 0
+	return tag, err == nil && tag.ID != uuid.Nil && (tag.Sequence > 0 || tag.Version > 0)
+}
+
+func tagRevision(tag tagItem) int64 {
+	if tag.Sequence > 0 {
+		return tag.Sequence
+	}
+	return int64(tag.Version)
 }
 
 // A list response can race an event. Keep the highest known version for
@@ -21,7 +28,7 @@ func mergeTagList(known, loaded []tagItem) []tagItem {
 	}
 	merged := slices.Clone(loaded)
 	for i, tag := range merged {
-		if current, exists := byID[tag.ID.String()]; exists && current.Version > tag.Version {
+		if current, exists := byID[tag.ID.String()]; exists && tagRevision(current) > tagRevision(tag) {
 			merged[i] = current
 		}
 	}
@@ -33,10 +40,13 @@ func applyTagUpdate(tags []tagItem, updated tagItem) ([]tagItem, bool) {
 		if tag.ID.String() != updated.ID.String() {
 			continue
 		}
-		if tag.Version >= updated.Version {
+		if tagRevision(tag) >= tagRevision(updated) {
 			return tags, true
 		}
 		result := slices.Clone(tags)
+		if updated.Origin == "" {
+			updated.Origin = tag.Origin
+		}
 		result[i] = updated
 		return result, true
 	}

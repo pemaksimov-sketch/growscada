@@ -16,8 +16,10 @@ import (
 	"github.com/kipitix/growscada/internal/server/domain/event"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/project"
+	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/migrations"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
+	runtimestore "github.com/kipitix/growscada/internal/server/infrastructure/postgres/runtime"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
 	"github.com/kipitix/growscada/internal/server/interface/httpserver"
 	"github.com/kipitix/growscada/internal/server/interface/restapi"
@@ -34,8 +36,9 @@ const (
 
 // serverArgs is the server's command-line/environment configuration.
 type serverArgs struct {
-	DatabaseDSN   string `arg:"env:DATABASE_DSN" default:"postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable" help:"PostgreSQL connection string"`
-	MaxSSEClients int    `arg:"env:MAX_SSE_CLIENTS" default:"100" help:"maximum number of concurrent SSE event-stream connections"`
+	DatabaseDSN        string `arg:"env:DATABASE_DSN" default:"postgres://growscada:growscada@localhost:5432/growscada?sslmode=disable" help:"PostgreSQL connection string"`
+	RuntimeDatabaseDSN string `arg:"env:RUNTIME_DATABASE_DSN" help:"Runtime PostgreSQL connection string (defaults to DATABASE_DSN)"`
+	MaxSSEClients      int    `arg:"env:MAX_SSE_CLIENTS" default:"100" help:"maximum number of concurrent SSE event-stream connections"`
 }
 
 type slogAdapter struct{}
@@ -86,6 +89,43 @@ func main() {
 		slog.Error("Database ping error", "error", err)
 		emergencyExit(gracedownManager, gracedown.ExitIOErr)
 	}
+	runtimeDSN := cliArgs.RuntimeDatabaseDSN
+	if runtimeDSN == "" {
+		runtimeDSN = cliArgs.DatabaseDSN
+	}
+	runtimeDB, err := sql.Open("postgres", runtimeDSN)
+	if err != nil {
+		slog.Error("Runtime database connection error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	gracedownManager.RegisterInfrastructure("Runtime database", 15*time.Second, func(context.Context) error { return runtimeDB.Close() })
+	if err := runtimeDB.Ping(); err != nil {
+		slog.Error("Runtime database ping error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	if err := migrations.Apply(context.Background(), sqlDB, runtimeDB); err != nil {
+		slog.Error("Database migrations failed", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	// Reopen Engineering connections with the moved schema first in search_path.
+	if err := sqlDB.Close(); err != nil {
+		slog.Error("Database close after migrations failed", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	engineeringDSN, err := migrations.WithEngineeringSearchPath(cliArgs.DatabaseDSN)
+	if err != nil {
+		slog.Error("Engineering database DSN invalid", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	sqlDB, err = sql.Open("postgres", engineeringDSN)
+	if err != nil {
+		slog.Error("Engineering database connection error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		slog.Error("Engineering database ping error", "error", err)
+		emergencyExit(gracedownManager, gracedown.ExitIOErr)
+	}
 
 	// Create message broker connection
 	// TODO
@@ -123,7 +163,8 @@ func main() {
 		result := make([]application.WidgetBindingScope, len(projects))
 		for i, p := range projects {
 			scope := repositories.ForProject(sqlDB, p.ID(), notifyDispatcher)
-			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: scope.Tags()}
+			definitions := repositories.NewTagDefinitionRepository(sqlDB, p.ID(), notifyDispatcher)
+			result[i] = application.WidgetBindingScope{Scenes: scope.Scenes(), Tags: application.NewDefinitionTagTypeLookup(definitions)}
 		}
 		return result, nil
 	}
@@ -134,16 +175,19 @@ func main() {
 		close(dispatcherDone)
 	}()
 	// Create services
-	tagService := application.NewTagService(tagRepository)
-	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository, application.WithWidgetTypeScopes(bindingScopes))
-	sceneService := application.NewSceneService(sceneRepository, widgetTypeRepository, tagRepository)
+	mainDefinitions := repositories.NewTagDefinitionRepository(sqlDB, project.MainID(), notifyDispatcher)
+	processState := runtimestore.New(runtimeDB).WithLiveEvents(eventBus.Publish)
+	tagService := application.NewSplitTagService(mainDefinitions, processState, project.MainID().UUID())
+	widgetTypeService := application.NewWidgetTypeService(widgetTypeRepository, sceneRepository, tagRepository, application.WithWidgetTypeDefinitions(mainDefinitions), application.WithWidgetTypeScopes(bindingScopes))
+	sceneService := application.NewSplitSceneService(sceneRepository, widgetTypeRepository, mainDefinitions)
 	// Create router
 	apiRouter := restapi.NewRouter(tagService, widgetTypeService, sceneService, eventBus, cliArgs.MaxSSEClients,
 		restapi.WithProjects(projectService, func(rawID uuid.UUID) restapi.ProjectServices {
 			scope := repositories.ForProject(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher)
-			tags, scenes := scope.Tags(), scope.Scenes()
-			return restapi.ProjectServices{Tags: application.NewTagService(tags), Scenes: application.NewSceneService(scenes, widgetTypeRepository, tags)}
-		}))
+			tags, scenes := repositories.NewTagDefinitionRepository(sqlDB, id.NewID(id.IDWithUUID[project.Project](rawID)), notifyDispatcher), scope.Scenes()
+			splitTags := application.NewSplitTagService(tags, processState, rawID)
+			return restapi.ProjectServices{Tags: splitTags, Definitions: splitTags, Scenes: application.NewSplitSceneService(scenes, widgetTypeRepository, tags)}
+		}, processState.RemoveProject))
 	// Register the event hub shutdown handler. The outbox is drained first,
 	// while SSE clients are still connected, so what is left in it reaches
 	// them; a change committed after the drain (the API server stops

@@ -7,13 +7,20 @@ import (
 	"github.com/kipitix/growscada/internal/server/interface/ui/livescene"
 )
 
+func tagRevision(t livescene.Tag) int64 {
+	if t.Sequence > 0 {
+		return t.Sequence
+	}
+	return int64(t.Version)
+}
+
 // decodeTagUpdate extracts the Tag state carried by a tag_updated event.
 func decodeTagUpdate(raw json.RawMessage) (livescene.Tag, bool) {
 	if len(raw) == 0 {
 		return livescene.Tag{}, false
 	}
 	var t livescene.Tag
-	if err := json.Unmarshal(raw, &t); err != nil || t.ID == uuid.Nil || t.Version <= 0 {
+	if err := json.Unmarshal(raw, &t); err != nil || t.ID == uuid.Nil || (t.Sequence <= 0 && t.Version <= 0) {
 		return livescene.Tag{}, false
 	}
 	return t, true
@@ -24,7 +31,7 @@ func decodeTagUpdate(raw json.RawMessage) (livescene.Tag, bool) {
 // out of order. An unknown Tag is added: the event carries its full state.
 // The given map is not modified: a new one lets the view notice the change.
 func applyTagUpdate(tags map[string]livescene.Tag, t livescene.Tag) map[string]livescene.Tag {
-	if cur, ok := tags[t.ID.String()]; ok && cur.Version >= t.Version {
+	if cur, ok := tags[t.ID.String()]; ok && tagRevision(cur) >= tagRevision(t) {
 		return tags
 	}
 	updated := make(map[string]livescene.Tag, len(tags)+1)
@@ -42,7 +49,10 @@ func applyTagUpdate(tags map[string]livescene.Tag, t livescene.Tag) map[string]l
 func mergeTags(known map[string]livescene.Tag, loaded []livescene.Tag) map[string]livescene.Tag {
 	merged := make(map[string]livescene.Tag, len(loaded))
 	for _, t := range loaded {
-		if cur, ok := known[t.ID.String()]; ok && cur.Version > t.Version {
+		if cur, ok := known[t.ID.String()]; ok && tagRevision(cur) > tagRevision(t) {
+			if t.Origin == "" {
+				t.Origin = cur.Origin
+			}
 			t = cur
 		}
 		merged[t.ID.String()] = t
@@ -59,6 +69,7 @@ func forgetVersions(tags map[string]livescene.Tag) map[string]livescene.Tag {
 	forgotten := make(map[string]livescene.Tag, len(tags))
 	for id, t := range tags {
 		t.Version = 0
+		t.Sequence = 0
 		forgotten[id] = t
 	}
 	return forgotten

@@ -13,12 +13,14 @@ import (
 // newTagResponse converts an app-level Tag DTO to an apiv0.TagResponse DTO.
 func newTagResponse(t appdto.Tag) apiv0.TagResponse {
 	return apiv0.TagResponse{
-		ID:      t.ID,
-		Name:    t.Name,
-		Type:    t.Type,
-		Value:   t.Value,
-		Quality: t.Quality,
-		Version: t.Version,
+		Origin:   t.Origin,
+		Sequence: t.Sequence,
+		ID:       t.ID,
+		Name:     t.Name,
+		Type:     t.Type,
+		Value:    t.Value,
+		Quality:  t.Quality,
+		Version:  t.Version,
 	}
 }
 
@@ -38,7 +40,7 @@ func newCreateTagResponse(t appdto.Tag) apiv0.CreateTagResponse {
 
 // newUpdateTagResponse converts an app-level Tag DTO to an apiv0.UpdateTagResponse DTO.
 func newUpdateTagResponse(t appdto.Tag) apiv0.UpdateTagResponse {
-	return apiv0.UpdateTagResponse{Version: t.Version}
+	return apiv0.UpdateTagResponse{Version: t.Version, Sequence: t.Sequence}
 }
 
 // newCreateTagInput converts an apiv0.CreateTagRequest DTO to an app-level CreateTagInput DTO.
@@ -129,8 +131,9 @@ func newWidgetResponse(w appdto.Widget) apiv0.WidgetResponse {
 	}
 	portBindings := appPortBindingsToRest(w.PortBindings)
 	return apiv0.WidgetResponse{
-		ID:   w.ID,
-		Name: w.Name,
+		EntityOrigin: w.EntityOrigin,
+		ID:           w.ID,
+		Name:         w.Name,
 		Position: apiv0.PositionResponse{
 			X: w.X,
 			Y: w.Y,

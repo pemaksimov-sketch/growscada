@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"github.com/kipitix/growscada/internal/server/domain/entityorigin"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
 	"github.com/kipitix/growscada/internal/server/domain/project"
@@ -148,35 +149,58 @@ func saveWidgets(ctx context.Context, tx *sql.Tx, sceneID id.ID[scene.Scene], pr
 			return fmt.Errorf("cannot serialize port bindings: %w", err)
 		}
 		if exists {
-			_, err = tx.ExecContext(ctx,
-				`UPDATE widgets
+			if old.EntityOrigin() != w.EntityOrigin() {
+				_, err = tx.ExecContext(ctx,
+					`UPDATE widgets
+					 SET name = $1, x = $2, y = $3, z = $4, width = $5, height = $6,
+					     origin_x = $7, origin_y = $8, rotation_degrees = $9,
+					     type_id = $10, labels = $11, port_bindings = $12, entity_origin = $13
+					 WHERE id = $14 AND scene_id = $15`,
+					w.Name().String(), w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(), w.Origin().X(), w.Origin().Y(), w.Rotation().Degrees(),
+					w.TypeID().UUID(), pq.Array(w.Labels()), portBindingsJSON, w.EntityOrigin().String(), w.ID().UUID(), sceneID.UUID())
+			} else {
+				_, err = tx.ExecContext(ctx,
+					`UPDATE widgets
 				 SET name = $1, x = $2, y = $3, z = $4, width = $5, height = $6,
 				     origin_x = $7, origin_y = $8, rotation_degrees = $9,
 				     type_id = $10, labels = $11, port_bindings = $12
 				 WHERE id = $13 AND scene_id = $14`,
-				w.Name().String(),
-				w.Position().X(), w.Position().Y(), w.Position().Z(),
-				w.Size().Width(), w.Size().Height(),
-				w.Origin().X(), w.Origin().Y(),
-				w.Rotation().Degrees(),
-				w.TypeID().UUID(),
-				pq.Array(w.Labels()), portBindingsJSON,
-				w.ID().UUID(), sceneID.UUID(),
-			)
+					w.Name().String(),
+					w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(),
+					w.Origin().X(), w.Origin().Y(),
+					w.Rotation().Degrees(),
+					w.TypeID().UUID(),
+					pq.Array(w.Labels()), portBindingsJSON,
+					w.ID().UUID(), sceneID.UUID(),
+				)
+			}
 		} else {
-			_, err = tx.ExecContext(ctx,
-				`INSERT INTO widgets
+			if w.EntityOrigin() == entityorigin.Project {
+				_, err = tx.ExecContext(ctx,
+					`INSERT INTO widgets
 				    (id, name, x, y, z, width, height, origin_x, origin_y, rotation_degrees,
 				     type_id, scene_id, labels, port_bindings, project_id)
 				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-				w.ID().UUID(), w.Name().String(),
-				w.Position().X(), w.Position().Y(), w.Position().Z(),
-				w.Size().Width(), w.Size().Height(),
-				w.Origin().X(), w.Origin().Y(),
-				w.Rotation().Degrees(),
-				w.TypeID().UUID(), sceneID.UUID(),
-				pq.Array(w.Labels()), portBindingsJSON, projectID,
-			)
+					w.ID().UUID(), w.Name().String(),
+					w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(),
+					w.Origin().X(), w.Origin().Y(),
+					w.Rotation().Degrees(),
+					w.TypeID().UUID(), sceneID.UUID(),
+					pq.Array(w.Labels()), portBindingsJSON, projectID,
+				)
+			} else {
+				_, err = tx.ExecContext(ctx,
+					`INSERT INTO widgets
+				    (id, name, x, y, z, width, height, origin_x, origin_y, rotation_degrees,
+				     type_id, scene_id, labels, port_bindings, project_id, entity_origin)
+				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+					w.ID().UUID(), w.Name().String(), w.Position().X(), w.Position().Y(), w.Position().Z(),
+					w.Size().Width(), w.Size().Height(), w.Origin().X(), w.Origin().Y(), w.Rotation().Degrees(),
+					w.TypeID().UUID(), sceneID.UUID(), pq.Array(w.Labels()), portBindingsJSON, projectID, w.EntityOrigin().String())
+			}
 		}
 		if err != nil {
 			if isForeignKeyViolation(err, constraintWidgetsTypeID) {
@@ -191,6 +215,7 @@ func saveWidgets(ctx context.Context, tx *sql.Tx, sceneID id.ID[scene.Scene], pr
 // sameWidget reports whether a and b would be stored as the same row.
 func sameWidget(a, b scene.Widget) bool {
 	return a.Name() == b.Name() &&
+		a.EntityOrigin() == b.EntityOrigin() &&
 		a.Position() == b.Position() &&
 		a.Size() == b.Size() &&
 		a.Origin() == b.Origin() &&
@@ -314,7 +339,7 @@ func findWidgetsBySceneIDs(ctx context.Context, tx *sql.Tx, sceneIDs []uuid.UUID
 	}
 
 	rows, err := tx.QueryContext(ctx,
-		"SELECT "+selectWidgetColumns+" FROM widgets WHERE scene_id = ANY($1::uuid[]) ORDER BY pk_id",
+		"SELECT "+selectWidgetColumns+" FROM widgets AS w WHERE w.scene_id = ANY($1::uuid[]) ORDER BY w.pk_id",
 		pq.Array(rawIDs),
 	)
 	if err != nil {

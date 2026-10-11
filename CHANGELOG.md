@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Tag definitions and live values now have separate domain models and storage. Engineering owns `engineering.tag_definitions`; Runtime owns `runtime.tags` with per-project value, Quality and sequence. Startup copies legacy values without losing integer precision, and repeat migration preserves live state. `PATCH /tags/{id}/value` no longer checks a definition version; `PUT /tags/{id}/definition` uses optimistic concurrency. Tags and Widgets carry Project/Runtime origin. API schema is 0.4. Project removal also clears Runtime values.
+
 - Project isolation (task 31): API 0.3 adds Project CRUD and `/projects/{project}/tags`, `/scenes` and `/events`. Typed scoped repositories isolate reads, writes, tag names, widget bindings and SSE; existing data migrates to Main in the default Organization. The UI selects/manages projects; growctl accepts `--project`/`GROWCTL_PROJECT` and manifest 0.2 `metadata.project`; simulator YAML accepts `project`. Older unscoped API paths and manifests retain the Main compatibility alias. Library types stay organization-wide until task 33.
 
 - Scene alignment guides (task 41): while moving or resizing, Project shows nearby edges and centers of the canvas and other widgets, including rotated bounds. The Guides toggle is remembered locally. Guides are visual, leave coordinates unchanged and do not intercept pointer input.

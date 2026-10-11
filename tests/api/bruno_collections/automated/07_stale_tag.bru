@@ -24,12 +24,12 @@ body:json {
 
 tests {
   test("stale_tag: status and schema header", function () {
-    expect(res.getStatus()).to.equal(409);
+    expect(res.getStatus()).to.equal(200);
     expect(res.getHeader("GrowSCADA-Schema-Version")).to.match(/^\d+\.\d+$/);
   });
   test("stale_tag: response", function () {
     const body = res.getBody();
-    expect(body.status).to.equal(409); expect(body.title).to.be.a("string").and.not.empty; expect(body.detail).to.be.a("string");
+    expect(body.version).to.equal(1); expect(body.sequence).to.equal(3);
 
   });
 }

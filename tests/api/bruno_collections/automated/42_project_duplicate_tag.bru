@@ -26,7 +26,7 @@ body:json {
 tests {
   test("project_duplicate_tag: status and schema header", function () {
     expect(res.getStatus()).to.equal(409);
-    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.3");
+    expect(res.getHeader("GrowSCADA-Schema-Version")).to.equal("0.4");
   });
   test("project_duplicate_tag: response", function () {
     const body = res.getBody();

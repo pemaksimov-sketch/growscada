@@ -3,6 +3,7 @@ package scene
 import (
 	"fmt"
 
+	"github.com/kipitix/growscada/internal/server/domain/entityorigin"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
 )
@@ -24,6 +25,7 @@ type Widget interface {
 	TypeID() id.ID[library.WidgetType]
 	Labels() []string
 	PortBindings() []PortBinding
+	EntityOrigin() entityorigin.Origin
 
 	fmt.Stringer
 }
@@ -39,6 +41,7 @@ type widgetImpl struct {
 	typeID       id.ID[library.WidgetType]
 	labels       []string
 	portBindings []PortBinding
+	entityOrigin entityorigin.Origin
 }
 
 var _ Widget = (*widgetImpl)(nil)
@@ -55,12 +58,23 @@ func NewWidget(
 	someLabels []string,
 	somePortBindings []PortBinding,
 ) Widget {
+	return NewWidgetWithEntityOrigin(anID, aName, aPosition, aSize, anOrigin, aRotation, aTypeID, someLabels, somePortBindings, entityorigin.Project)
+}
+
+// NewWidgetWithEntityOrigin creates a Widget with an explicit operational
+// origin. The geometric anchor remains the separate Origin argument.
+func NewWidgetWithEntityOrigin(
+	anID id.ID[Widget], aName WidgetName, aPosition Position, aSize library.Size,
+	anOrigin Origin, aRotation Rotation, aTypeID id.ID[library.WidgetType],
+	someLabels []string, somePortBindings []PortBinding, operationalOrigin entityorigin.Origin,
+) Widget {
 	labels := make([]string, len(someLabels))
 	copy(labels, someLabels)
-
 	portBindings := make([]PortBinding, len(somePortBindings))
 	copy(portBindings, somePortBindings)
-
+	if !operationalOrigin.IsValid() {
+		operationalOrigin = entityorigin.Project
+	}
 	return &widgetImpl{
 		id:           anID,
 		name:         aName,
@@ -71,6 +85,7 @@ func NewWidget(
 		typeID:       aTypeID,
 		labels:       labels,
 		portBindings: portBindings,
+		entityOrigin: operationalOrigin,
 	}
 }
 
@@ -93,6 +108,7 @@ func (w widgetImpl) PortBindings() []PortBinding {
 	copy(out, w.portBindings)
 	return out
 }
+func (w widgetImpl) EntityOrigin() entityorigin.Origin { return w.entityOrigin }
 
 // TransformationMatrix computes the 2D affine CSS matrix from the widget's
 // position, origin, rotation and size.

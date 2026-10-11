@@ -26,7 +26,7 @@ type WidgetTypeService interface {
 type widgetTypeServiceImpl struct {
 	repository      library.WidgetTypeRepository
 	sceneRepository scene.SceneRepository
-	tagRepository   tag.TagRepository
+	tagTypes        TagTypeLookup
 	bindingScopes   func(context.Context) ([]WidgetBindingScope, error)
 }
 
@@ -36,9 +36,13 @@ var _ WidgetTypeService = (*widgetTypeServiceImpl)(nil)
 // changes are recorded by the aggregates and saved with them (ADR 0008).
 type WidgetBindingScope struct {
 	Scenes scene.SceneRepository
-	Tags   tag.TagRepository
+	Tags   TagTypeLookup
 }
 type WidgetTypeServiceOption func(*widgetTypeServiceImpl)
+
+func WithWidgetTypeDefinitions(definitions tag.DefinitionRepository) WidgetTypeServiceOption {
+	return func(s *widgetTypeServiceImpl) { s.tagTypes = NewDefinitionTagTypeLookup(definitions) }
+}
 
 func WithWidgetTypeScopes(scopes func(context.Context) ([]WidgetBindingScope, error)) WidgetTypeServiceOption {
 	return func(s *widgetTypeServiceImpl) { s.bindingScopes = scopes }
@@ -48,7 +52,7 @@ func NewWidgetTypeService(aRepository library.WidgetTypeRepository, aSceneReposi
 	s := &widgetTypeServiceImpl{
 		repository:      aRepository,
 		sceneRepository: aSceneRepository,
-		tagRepository:   tagRepo,
+		tagTypes:        NewLegacyTagTypeLookup(tagRepo),
 	}
 	for _, opt := range opts {
 		opt(s)

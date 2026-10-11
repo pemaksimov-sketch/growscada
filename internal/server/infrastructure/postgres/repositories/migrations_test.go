@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/migrations"
 	"github.com/pressly/goose/v3"
 )
 
@@ -30,6 +31,58 @@ func migrationDB(t *testing.T) (*sql.DB, string) {
 	})
 	_, currentFile, _, _ := runtime.Caller(0)
 	return db, filepath.Join(filepath.Dir(currentFile), "..", "migrations")
+}
+
+func TestMigrationSplit_CopiesLegacyStateIntoSeparateRuntimeDatabase(t *testing.T) {
+	ctx := context.Background()
+	engineeringDB, dir := migrationDB(t)
+	runtimeName := "runtime_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := testDB.Exec("CREATE DATABASE " + runtimeName); err != nil {
+		t.Fatal(err)
+	}
+	runtimeDB, err := sql.Open("postgres", strings.Replace(testConnStr, "/testdb?", "/"+runtimeName+"?", 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runtimeDB.Close(); _, _ = testDB.Exec("DROP DATABASE IF EXISTS " + runtimeName) })
+	if err := goose.UpToContext(ctx, engineeringDB, dir, 20261011010000); err != nil {
+		t.Fatal(err)
+	}
+	const mainProjectID = "00000000-0000-4000-8000-000000000001"
+	tagID := uuid.New()
+	if _, err := engineeringDB.ExecContext(ctx, `INSERT INTO tags(id,project_id,name,type,value,quality,version) VALUES($1,$2,'legacy.counter','integer','9007199254740993','good',7)`, tagID, mainProjectID); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrations.Apply(ctx, engineeringDB, runtimeDB); err != nil {
+		t.Fatal(err)
+	}
+	var name, kind, origin string
+	var definitionVersion int
+	if err := engineeringDB.QueryRowContext(ctx, `SELECT name,type,origin,version FROM engineering.tag_definitions WHERE id=$1`, tagID).Scan(&name, &kind, &origin, &definitionVersion); err != nil {
+		t.Fatal(err)
+	}
+	if name != "legacy.counter" || kind != "integer" || origin != "Project" || definitionVersion != 1 {
+		t.Fatalf("definition not preserved and normalized: %s %s %s v%d", name, kind, origin, definitionVersion)
+	}
+	var value, quality string
+	var sequence int64
+	if err := runtimeDB.QueryRowContext(ctx, `SELECT value,quality,sequence FROM runtime.tags WHERE id=$1`, tagID).Scan(&value, &quality, &sequence); err != nil {
+		t.Fatal(err)
+	}
+	if value != "9007199254740993" || quality != "good" || sequence != 7 {
+		t.Fatalf("runtime state changed: %s %s #%d", value, quality, sequence)
+	}
+	var hasValue, hasQuality bool
+	if err := engineeringDB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='engineering' AND table_name='tag_definitions' AND column_name='value'), EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='engineering' AND table_name='tag_definitions' AND column_name='quality')`).Scan(&hasValue, &hasQuality); err != nil || hasValue || hasQuality {
+		t.Fatalf("runtime columns remain in Engineering: %v %v %v", hasValue, hasQuality, err)
+	}
+	if err := migrations.Apply(ctx, engineeringDB, runtimeDB); err != nil {
+		t.Fatalf("repeat migration: %v", err)
+	}
+	var stillValue string
+	if err := runtimeDB.QueryRowContext(ctx, `SELECT value FROM runtime.tags WHERE id=$1`, tagID).Scan(&stillValue); err != nil || stillValue != value {
+		t.Fatalf("repeat migration overwrote Runtime state: %s %v", stillValue, err)
+	}
 }
 
 func TestMigrationProjects_PreservesLegacyDataAndScopesOutbox(t *testing.T) {
@@ -54,7 +107,7 @@ func TestMigrationProjects_PreservesLegacyDataAndScopesOutbox(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := goose.UpContext(ctx, db, dir); err != nil {
+	if err := goose.UpToContext(ctx, db, dir, 20261011010000); err != nil {
 		t.Fatal(err)
 	}
 	const mainID = "00000000-0000-4000-8000-000000000001"

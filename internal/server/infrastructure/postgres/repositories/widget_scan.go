@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"github.com/kipitix/growscada/internal/server/domain/entityorigin"
 	"github.com/kipitix/growscada/internal/server/domain/id"
 	"github.com/kipitix/growscada/internal/server/domain/library"
 	"github.com/kipitix/growscada/internal/server/domain/scene"
@@ -16,7 +17,7 @@ import (
 // selectWidgetColumns lists the widgets columns read by every SELECT/RETURNING
 // in this package. scene_id is included so callers scoping a query by scene
 // can still verify/route rows without a second lookup.
-const selectWidgetColumns = `id, name, x, y, z, width, height, origin_x, origin_y, rotation_degrees, type_id, scene_id, labels, port_bindings`
+const selectWidgetColumns = `w.id, w.name, w.x, w.y, w.z, w.width, w.height, w.origin_x, w.origin_y, w.rotation_degrees, w.type_id, w.scene_id, w.labels, w.port_bindings, COALESCE(to_jsonb(w)->>'entity_origin','Project')`
 
 // rawWidgetRow holds the raw column values read from a widgets row before domain validation.
 // The field order matches selectWidgetColumns.
@@ -34,6 +35,7 @@ type rawWidgetRow struct {
 	sceneID          uuid.UUID
 	labels           pq.StringArray
 	portBindingsJSON []byte
+	entityOrigin     string
 }
 
 // scanWidget reads a single widget row using the provided scan function.
@@ -48,7 +50,7 @@ func scanWidget(scan func(...any) error) (scene.Widget, uuid.UUID, error) {
 		&row.originX, &row.originY,
 		&row.rotDegrees,
 		&row.typeID, &row.sceneID,
-		&row.labels, &row.portBindingsJSON,
+		&row.labels, &row.portBindingsJSON, &row.entityOrigin,
 	); err != nil {
 		return nil, uuid.Nil, err
 	}
@@ -85,7 +87,11 @@ func reconstructWidget(row rawWidgetRow) (scene.Widget, error) {
 		return nil, fmt.Errorf("cannot unmarshal port bindings: %w", err)
 	}
 
-	return scene.NewWidget(newID, newName, pos, size, origin, rotation, typeID, row.labels, portBindings), nil
+	operationalOrigin, err := entityorigin.Parse(row.entityOrigin)
+	if err != nil {
+		return nil, fmt.Errorf("cannot create widget entity origin: %w", err)
+	}
+	return scene.NewWidgetWithEntityOrigin(newID, newName, pos, size, origin, rotation, typeID, row.labels, portBindings, operationalOrigin), nil
 }
 
 // portBindingJSON is the on-disk representation of a PortBinding.

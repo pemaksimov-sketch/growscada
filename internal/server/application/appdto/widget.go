@@ -36,6 +36,7 @@ type Widget struct {
 	SceneVersion     int
 	Labels           []string
 	PortBindings     []PortBinding
+	EntityOrigin     string
 }
 
 // WidgetInput holds the fields of a widget instance a client creates or
@@ -96,6 +97,7 @@ func NewWidget(w scene.Widget, sceneID uuid.UUID, sceneVersion int) Widget {
 		SceneVersion: sceneVersion,
 		Labels:       labels,
 		PortBindings: portBindings,
+		EntityOrigin: w.EntityOrigin().String(),
 	}
 }
 
