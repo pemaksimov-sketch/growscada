@@ -41,7 +41,7 @@ func TestProjectReconciliation_UpdatesEveryProjectAndPreservesEventScope(t *test
 		t.Cleanup(func() { _, _ = testDB.Exec("DELETE FROM projects WHERE id=$1", p.ID) })
 		r := repositories.ForProject(testDB, id.NewID(id.IDWithUUID[project.Project](p.ID)))
 		scopes = append(scopes, application.WidgetBindingScope{Scenes: r.Scenes(), Tags: r.Tags()})
-		tg, err := application.NewTagService(r.Tags()).CreateTag(ctx, appdto.CreateTagInput{Name: "same.name", Type: "Integer", Value: "1", Quality: "Good"})
+		tg, err := application.NewTagService(r.Tags()).CreateTag(ctx, appdto.CreateTagInput{Name: "same.name", Type: "integer", Value: "1", Quality: "good"})
 		if err != nil {
 			t.Fatal(err)
 		}
