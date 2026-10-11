@@ -55,6 +55,9 @@ async function api(resource, method = 'GET', body) {
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
     await context.addInitScript(({ sceneID }) => {
+      // Playwright also injects this into sandboxed srcdoc frames. Only the
+      // application window owns preferences; sandbox frames cannot use storage.
+      if (window !== window.top) return;
       localStorage.setItem('root:mode', JSON.stringify('project'));
       localStorage.setItem('project:sceneID', JSON.stringify(sceneID));
       localStorage.setItem('operation:sceneID', JSON.stringify(sceneID));
