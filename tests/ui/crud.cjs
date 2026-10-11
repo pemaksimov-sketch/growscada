@@ -24,7 +24,13 @@ module.exports = async function checkCRUD(page, api, until) {
   await until(async () => (await api(`/widget-types/${type.id}`)).html_template === html);
 
   await clickMode('Project');
+  // A previous Project instance can remain visible during the mode switch.
+  // The new type was created in Library, so its thumbnail proves that the
+  // mounted Project instance has finished its initial API load.
+  await page.locator(`[data-widget-type-id="${type.id}"]`).waitFor();
+  const createdScene = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/scenes'));
   await page.locator('#create-scene').click();
+  assert.equal((await createdScene).status(), 201);
   await until(async () => await page.locator('#scene-name').inputValue() === 'New Scene');
   await page.locator('#scene-name').fill('CRUD browser scene');
   await page.locator('#scene-name').press('Tab');

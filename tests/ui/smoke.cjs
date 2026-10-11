@@ -36,6 +36,7 @@ async function api(resource, method = 'GET', body) {
 (async () => {
   let browser;
   let page;
+  const responses = [];
   try {
     await until(async () => (await fetch('http://localhost:9090/api/v0/scenes')).ok);
     const scene = await api('/scenes', 'POST', {
@@ -66,6 +67,11 @@ async function api(resource, method = 'GET', body) {
       localStorage.setItem('operation:sceneID', JSON.stringify(sceneID));
     }, { sceneID: scene.id });
     page = await context.newPage();
+    page.on('response', response => {
+      if (response.url().includes('/api/v0/') && !response.url().endsWith('/events')) {
+        responses.push({ method: response.request().method(), url: response.url(), status: response.status() });
+      }
+    });
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://localhost:8080');
@@ -213,6 +219,11 @@ async function api(resource, method = 'GET', body) {
     assert.equal((await serverExit).code, 0);
     console.log('PASS: background, scoped SSE, draft preservation, exact Integer, reconciliation and restart');
   } catch (error) {
+    fs.writeFileSync(path.join(output, 'responses.json'), JSON.stringify(responses, null, 2));
+    if (page) {
+      fs.writeFileSync(path.join(output, 'page.html'), await page.content().catch(() => ''));
+      fs.writeFileSync(path.join(output, 'scenes.json'), JSON.stringify(await api('/scenes').catch(() => ({})), null, 2));
+    }
     if (page) await page.screenshot({ path: path.join(output, 'failure.png') }).catch(() => {});
     throw error;
   } finally {
