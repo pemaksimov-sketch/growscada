@@ -41,6 +41,7 @@ CREATE TABLE engineering.library_releases (
     UNIQUE (library_id, id)
 );
 
+-- +goose StatementBegin
 CREATE FUNCTION engineering.reject_library_release_mutation() RETURNS trigger AS $$
 BEGIN
     RAISE EXCEPTION 'Library Releases are immutable' USING ERRCODE = '55000';
@@ -49,6 +50,7 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER library_releases_immutable
     BEFORE UPDATE OR DELETE ON engineering.library_releases
     FOR EACH ROW EXECUTE FUNCTION engineering.reject_library_release_mutation();
+-- +goose StatementEnd
 
 INSERT INTO engineering.library_releases(id, library_id, number, content)
 SELECT '00000000-0000-4000-8000-000000000004',
