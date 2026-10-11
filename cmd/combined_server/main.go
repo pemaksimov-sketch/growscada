@@ -19,6 +19,7 @@ import (
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/outbox"
 	"github.com/kipitix/growscada/internal/server/infrastructure/postgres/repositories"
 	"github.com/kipitix/growscada/internal/server/interface/eventbus"
+	"github.com/kipitix/growscada/internal/server/interface/httpserver"
 	"github.com/kipitix/growscada/internal/server/interface/restapi"
 	"github.com/kipitix/growscada/internal/server/interface/ui/root"
 	"github.com/kipitix/growscada/internal/server/interface/ui/uiutil"
@@ -154,10 +155,7 @@ func main() {
 		return nil
 	})
 	// Start HTTP server for API
-	apiServer := &http.Server{
-		Addr:    ":9090",
-		Handler: apiRouter.ServeMux(),
-	}
+	apiServer := httpserver.New(":9090", apiRouter.ServeMux())
 
 	// Register the API server shutdown handler
 	gracedownManager.RegisterInterface("API HTTP Server", 15*time.Second, func(ctx context.Context) error {
@@ -173,13 +171,10 @@ func main() {
 	}()
 
 	// Server for serving the PWA client
-	pwaServer := &http.Server{
-		Addr: ":8080",
-		Handler: &app.Handler{
-			Name:        "GrowSCADA",
-			Description: "SCADA to Go",
-		},
-	}
+	pwaServer := httpserver.New(":8080", &app.Handler{
+		Name:        "GrowSCADA",
+		Description: "SCADA to Go",
+	})
 	// Register the PWA server shutdown handler
 	gracedownManager.RegisterInterface("PWA HTTP Server", 15*time.Second, func(ctx context.Context) error {
 		return pwaServer.Shutdown(ctx)
