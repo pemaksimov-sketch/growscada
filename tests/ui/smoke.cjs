@@ -195,8 +195,11 @@ async function api(resource, method = 'GET', body) {
     assert.deepEqual(conflicts, [], 'Drag after reconciliation conflicted');
     await require('./crud.cjs')(page, api, until);
     assert.deepEqual(errors, [], 'Browser runtime errors');
-	await page.getByText('Operation', { exact: true }).click();
-	await background.waitFor({ state: 'visible' });
+    await page.getByText('Operation', { exact: true }).click();
+    // Project's background remains visible during the mode transition.
+    // Operation's scene tab proves its own initial load has completed.
+    await page.getByRole('tab', { name: 'Browser QA', exact: true }).waitFor();
+    await background.waitFor({ state: 'visible' });
 
     const stoppedAt = Date.now();
     server.kill('SIGTERM');

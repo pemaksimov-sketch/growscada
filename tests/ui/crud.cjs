@@ -55,6 +55,12 @@ module.exports = async function checkCRUD(page, api, until) {
     return !!widget;
   });
   await page.locator('#widget-name').waitFor();
+  await page.locator('#scene-canvas').click({ position: { x: 600, y: 400 } });
+  await page.locator('#scene-name').waitFor();
+  const widgetBox = await page.locator(`#w-preview-${widget.id}`).boundingBox();
+  assert.ok(widgetBox);
+  await page.mouse.click(widgetBox.x + 20, widgetBox.y + 20);
+  await page.locator('#widget-name').waitFor();
   await page.locator('#widget-name').fill('CRUD browser widget');
   await page.locator('#widget-name').press('Tab');
   await until(async () => (await api(`/scenes/${scene.id}/widgets/${widget.id}`)).name === 'CRUD browser widget');
