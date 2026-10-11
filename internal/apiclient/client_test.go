@@ -51,6 +51,31 @@ func TestListTags_WrongServer404_ErrorNamesRequest(t *testing.T) {
 	}
 }
 
+func TestWithBearerToken_SendsTokenAndPreservesBaseClient(t *testing.T) {
+	var authorization string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"tags":[]}`))
+	}))
+	defer srv.Close()
+
+	base := apiclient.New(srv.URL, srv.Client())
+	secured := base.WithBearerToken("device-secret")
+	if _, err := secured.ListTags(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if authorization != "Bearer device-secret" {
+		t.Fatalf("Authorization = %q", authorization)
+	}
+	if _, err := base.ListTags(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if authorization != "" {
+		t.Fatalf("base client unexpectedly sent Authorization %q", authorization)
+	}
+}
+
 func TestRequests_StateSchemaVersion(t *testing.T) {
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

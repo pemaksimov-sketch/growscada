@@ -55,9 +55,10 @@ type Tag = apiv0.TagResponse
 
 // Client talks to the GrowSCADA REST API.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-	projectID  uuid.UUID
+	baseURL     string
+	httpClient  *http.Client
+	projectID   uuid.UUID
+	bearerToken string
 }
 
 // New creates a client for the server at baseURL (e.g. http://localhost:9090).
@@ -71,6 +72,14 @@ func (c *Client) ForProject(projectID uuid.UUID) *Client {
 	scoped := *c
 	scoped.projectID = projectID
 	return &scoped
+}
+
+// WithBearerToken returns an independent client that authenticates requests
+// with a bearer token. The token is kept out of URLs and request bodies.
+func (c *Client) WithBearerToken(token string) *Client {
+	secured := *c
+	secured.bearerToken = token
+	return &secured
 }
 func (c *Client) ProjectID() uuid.UUID { return c.projectID }
 func (c *Client) scopedPath(path string) string {
@@ -177,6 +186,9 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte, wantS
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set(contract.SchemaVersionHeader, apiv0.SchemaVersion().String())
+	if c.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

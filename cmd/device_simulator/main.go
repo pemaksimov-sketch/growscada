@@ -6,13 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/alexflint/go-arg"
 	"github.com/kipitix/gracedown"
 
@@ -24,6 +24,7 @@ import (
 type simulatorArgs struct {
 	Config  string `arg:"--config,required" help:"YAML config of the simulated device"`
 	Server  string `arg:"--server,env:DEVSIM_SERVER" help:"GrowSCADA REST API URL; overrides the config"`
+	Token   string `arg:"--token,env:GROWSCADA_DEVICE_TOKEN" help:"Device Token used to authenticate with GrowSCADA"`
 	Control string `arg:"--control" help:"control API listen address; overrides the config"`
 }
 
@@ -56,6 +57,9 @@ func main() {
 	gracedownManager := gracedown.NewManager(gracedown.WithLogger(slogAdapter{}))
 
 	client := apiclient.New(cfg.Server, &http.Client{Timeout: 10 * time.Second})
+	if args.Token != "" {
+		client = client.WithBearerToken(args.Token)
+	}
 	if cfg.Project != "" {
 		client = client.ForProject(uuid.MustParse(cfg.Project))
 	}
