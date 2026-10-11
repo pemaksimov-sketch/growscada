@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "Metadata": {
+      "properties": {
+        "library": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "TagDocument": {
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/Metadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/TagSpec"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "TagSpec": {
+      "properties": {
+        "initialQuality": {
+          "type": "string"
+        },
+        "initialValue": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "initialValue",
+        "initialQuality"
+      ],
+      "type": "object"
+    },
+    "WidgetPort": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "typeHint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "WidgetTypeDocument": {
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/Metadata"
+        },
+        "spec": {
+          "$ref": "#/$defs/WidgetTypeSpec"
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "WidgetTypeSpec": {
+      "properties": {
+        "defaultHeight": {
+          "type": "integer"
+        },
+        "defaultWidth": {
+          "type": "integer"
+        },
+        "htmlTemplate": {
+          "type": "string"
+        },
+        "inputPorts": {
+          "items": {
+            "$ref": "#/$defs/WidgetPort"
+          },
+          "type": "array"
+        },
+        "script": {
+          "type": "string"
+        },
+        "scriptLanguage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "htmlTemplate",
+        "script",
+        "scriptLanguage",
+        "defaultWidth",
+        "defaultHeight",
+        "inputPorts"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/kipitix/growscada/schemas/manifest/0.3.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GrowSCADA growctl manifest 0.3"
+}
